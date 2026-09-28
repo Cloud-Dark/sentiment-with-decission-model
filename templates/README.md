@@ -1,5 +1,9 @@
 # Template pertanyaan
 
+> Status: Draft
+> Terakhir diperbarui: 2026-09-28
+> Pemilik: _TBD_
+
 Folder ini berisi template untuk mode **custom** (editor preset di UI). Setiap template disimpan
 sebagai satu file `<id>.json`. Nama file sama dengan `id`.
 

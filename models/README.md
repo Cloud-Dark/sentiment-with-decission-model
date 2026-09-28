@@ -1,5 +1,9 @@
 # models/
 
+> Status: Draft
+> Terakhir diperbarui: 2026-09-28
+> Pemilik: _TBD_
+
 Taruh **satu** file GGUF Laya multilingual di folder ini (dari
 [mys/laya-multilingual-GGUF](https://huggingface.co/mys/laya-multilingual-GGUF)):
 
