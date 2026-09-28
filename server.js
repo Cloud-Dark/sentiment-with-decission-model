@@ -1,0 +1,1349 @@
+'use strict';
+
+// Sentiment scoring backend.
+// - Serves the static frontend from public/
+// - Manages a child `laya.exe serve` process (ggmlc Laya decision model, TypeSafe-compatible API)
+// - Exposes /api/status, /api/model, /api/presets, /api/score, /api/export
+// - Scoring modes: sentiment3 (choice), binary (noul), scale5 (score rubric 1..5), and "preset"
+//   (a laya /v1/presets question set, optionally plus the sentiment3 question)
+// - Every result carries a generic questions[] array so the UI can render any mode the same way
+
+const fs = require('fs');
+const path = require('path');
+const { spawn, execFile } = require('child_process');
+const net = require('net');
+const express = require('express');
+const ExcelJS = require('exceljs');
+const { setup, EXE_PATH } = require('./scripts/setup');
+
+const ROOT = __dirname;
+const MODELS_DIR = path.join(ROOT, 'models');
+const PORT = Number(process.env.PORT) || 3000;
+// When a port is not set explicitly and is busy, try the next few ports instead of failing.
+const PORT_TRIES = 20;
+let LAYA_PORT = Number(process.env.LAYA_PORT) || 8089;
+const LAYA_DEVICE = process.env.LAYA_DEVICE || 'auto';
+const LAYA_HOST = '127.0.0.1';
+const MAX_TEXTS = 256; // laya /v1/decide/batch limit
+const MODEL_POLL_MS = 5000;
+const HEALTH_POLL_MS = 1000;
+const HEALTH_TIMEOUT_MS = 10 * 60 * 1000; // model load on first run can be slow
+
+// Average label thresholds: the average score is mean(P(pos) - P(neg)) in [-1, 1].
+//   avg >  0.15  -> positive
+//   avg < -0.15  -> negative
+//   otherwise    -> neutral
+const AVG_POSITIVE_THRESHOLD = 0.15;
+const AVG_NEGATIVE_THRESHOLD = -0.15;
+
+// scale5: average rating (1..5) -> label. >= 3.5 positive, <= 2.5 negative, otherwise neutral.
+const SCALE_POSITIVE_THRESHOLD = 3.5;
+const SCALE_NEGATIVE_THRESHOLD = 2.5;
+
+const LABELS = ['positive', 'neutral', 'negative'];
+
+// Every sentiment mode asks a single question with id "sentiment" against state {"text": t}.
+// (Preset mode is not in this table: its questions come from laya /v1/presets.)
+// Each mode defines:
+//   question        - laya/TypeSafe question definition
+//   options         - [{key, text}] in rubric order (text in Bahasa Indonesia, shown in UI + Excel)
+//   valueHeader     - Excel column header for `value` (null = same as score, skip the column)
+//   scoreRule / averageRule - human-readable rules written to the Excel Summary sheet
+// Answers are parsed per mode by PARSERS (parseChoice / parseNoul / parseScore) into
+//   {label, score (-1..1), value, confidence, act, options:[{key,text,prob}]}
+const MODES = {
+  sentiment3: {
+    question: {
+      type: 'choice',
+      instructions: 'What is the sentiment of this text?',
+      // Wording tuned on the multilingual Q4 model: spelling out "average / so-so / mixed" as
+      // neutral stops lukewarm texts ("biasa saja") from being pushed to negative.
+      criteria: {
+        positive: 'Clearly positive: praise, satisfaction, happiness, or recommendation.',
+        neutral:
+          'Neutral: factual information, a question, an average or so-so opinion, or mixed feelings without a clear positive or negative lean.',
+        negative: 'Clearly negative: complaint, anger, disappointment, or criticism.',
+      },
+    },
+    options: [
+      { key: 'positive', text: 'Positif' },
+      { key: 'neutral', text: 'Netral' },
+      { key: 'negative', text: 'Negatif' },
+    ],
+    valueHeader: null,
+    scoreRule: 'P(positif) - P(negatif)',
+    averageRule: `skor > ${AVG_POSITIVE_THRESHOLD} positive, < ${AVG_NEGATIVE_THRESHOLD} negative, selain itu neutral`,
+  },
+  binary: {
+    question: {
+      type: 'noul',
+      instructions: 'Is the overall sentiment of this text positive?',
+      criteria: {
+        false: 'the text is negative / expresses dissatisfaction',
+        true: 'the text is positive / expresses satisfaction',
+      },
+    },
+    options: [
+      { key: 'negative', text: 'Negatif' },
+      { key: 'positive', text: 'Positif' },
+    ],
+    valueHeader: 'P(positif)',
+    scoreRule: '2 * P(positif) - 1',
+    averageRule: 'rata-rata P(positif) >= 0.5 positive, selain itu negative',
+  },
+  scale5: {
+    question: {
+      type: 'score',
+      instructions: 'How positive or negative is the sentiment of this text?',
+      // Rubric levels 0..4 (laya labels array criteria by index). Short labels such as
+      // "very negative" / "neutral" pushed factual texts to level 0 on the multilingual model;
+      // describing the writer's state and spelling out "facts / question / so-so / mixed" as
+      // neutral keeps factual and lukewarm texts near the middle.
+      criteria: [
+        'Very negative: the writer is angry, furious, or deeply disappointed.',
+        'Negative: the writer is dissatisfied, complains, or criticizes something.',
+        'Neutral: the text only states facts or information, asks a question, or gives an average, so-so, or mixed opinion with no clear lean.',
+        'Positive: the writer is satisfied, pleased, or approves of something.',
+        'Very positive: the writer is delighted, enthusiastic, or strongly recommends something.',
+      ],
+    },
+    options: [
+      { key: '1', text: '1: sangat negatif' },
+      { key: '2', text: '2: negatif' },
+      { key: '3', text: '3: netral / campuran' },
+      { key: '4', text: '4: positif' },
+      { key: '5', text: '5: sangat positif' },
+    ],
+    valueHeader: 'Rating (1-5)',
+    scoreRule: '(rating - 3) / 2',
+    averageRule: `rata-rata rating >= ${SCALE_POSITIVE_THRESHOLD} positive, <= ${SCALE_NEGATIVE_THRESHOLD} negative, selain itu neutral`,
+  },
+};
+const DEFAULT_MODE = 'sentiment3';
+
+// ---------------------------------------------------------------------------
+// Laya child process management
+// ---------------------------------------------------------------------------
+
+const state = {
+  ready: false,
+  model: null, // basename of the gguf
+  modelPath: null,
+  device: null,
+  message: 'Memulai server...',
+  error: null,
+  child: null,
+  triedCpuFallback: false,
+  shuttingDown: false,
+  switching: false, // true while POST /api/model is stopping the old child / loading the new one
+  gen: 0, // bumped on every model switch; a stale launch() sees the mismatch and does not spawn
+};
+
+function log(...args) {
+  console.log('[server]', ...args);
+}
+
+function setStatus(message, extra = {}) {
+  state.message = message;
+  Object.assign(state, extra);
+  log(message);
+}
+
+// Preference: env LAYA_MODEL > q8_0 > ud_q4_k_m > f16 > any other *.gguf
+function findModel() {
+  if (process.env.LAYA_MODEL) {
+    const p = path.resolve(ROOT, process.env.LAYA_MODEL);
+    if (fs.existsSync(p)) return p;
+    const inModels = path.join(MODELS_DIR, process.env.LAYA_MODEL);
+    if (fs.existsSync(inModels)) return inModels;
+    log(`LAYA_MODEL=${process.env.LAYA_MODEL} tidak ditemukan, mencari di models/`);
+  }
+  let files = [];
+  try {
+    files = fs.readdirSync(MODELS_DIR).filter((f) => f.toLowerCase().endsWith('.gguf'));
+  } catch {
+    return null;
+  }
+  if (!files.length) return null;
+  const rank = (f) => {
+    const n = f.toLowerCase();
+    if (n.includes('q8_0')) return 0;
+    if (n.includes('ud_q4_k_m') || n.includes('q4_k_m')) return 1;
+    if (n.includes('f16')) return 2;
+    return 3;
+  };
+  files.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  return path.join(MODELS_DIR, files[0]);
+}
+
+// All *.gguf files in models/, sorted by name (rescanned on every call).
+function listModels() {
+  let files = [];
+  try {
+    files = fs.readdirSync(MODELS_DIR).filter((f) => f.toLowerCase().endsWith('.gguf'));
+  } catch {
+    return [];
+  }
+  files.sort((a, b) => a.localeCompare(b));
+  return files.map((file) => {
+    let size = 0;
+    try {
+      size = fs.statSync(path.join(MODELS_DIR, file)).size;
+    } catch {
+      /* file vanished between readdir and stat */
+    }
+    return { file, size_mb: Math.round((size / (1024 * 1024)) * 10) / 10, active: file === state.model };
+  });
+}
+
+// Wait until the model file stops growing (user may still be copying/downloading it).
+async function waitForStableFile(p) {
+  let prev = -1;
+  for (;;) {
+    let size;
+    try {
+      size = fs.statSync(p).size;
+    } catch {
+      return false;
+    }
+    if (size > 0 && size === prev) return true;
+    prev = size;
+    await sleep(2000);
+  }
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function pipeLogs(stream, prefix) {
+  let buf = '';
+  stream.setEncoding('utf8');
+  stream.on('data', (chunk) => {
+    buf += chunk;
+    const lines = buf.split(/\r?\n/);
+    buf = lines.pop();
+    for (const line of lines) if (line.trim()) console.log(`${prefix} ${line}`);
+  });
+  stream.on('end', () => {
+    if (buf.trim()) console.log(`${prefix} ${buf}`);
+  });
+}
+
+async function fetchJson(url, opts = {}, timeoutMs = 120000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...opts, signal: ctrl.signal });
+    const text = await res.text();
+    let body;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = { raw: text };
+    }
+    if (!res.ok) {
+      const msg = body?.error?.message || body?.message || text || res.statusText;
+      const err = new Error(`laya HTTP ${res.status}: ${msg}`);
+      err.status = res.status;
+      throw err;
+    }
+    return body;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Returns true if nothing is listening on host:port. Used so we never mistake
+// another laya instance (e.g. a second copy of this app) for our own child.
+function isPortFree(port, host = LAYA_HOST) {
+  return new Promise((resolve) => {
+    const sock = net.connect({ port, host });
+    sock.once('connect', () => {
+      sock.destroy();
+      resolve(false);
+    });
+    sock.once('error', () => resolve(true));
+    sock.setTimeout(1000, () => {
+      sock.destroy();
+      resolve(true);
+    });
+  });
+}
+
+function startLaya(modelPath, device) {
+  const args = ['serve', modelPath, '--port', String(LAYA_PORT), '--device', device];
+  log(`Menjalankan: ${EXE_PATH} ${args.join(' ')}`);
+  const child = spawn(EXE_PATH, args, {
+    cwd: path.dirname(EXE_PATH),
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  state.child = child;
+  pipeLogs(child.stdout, '[laya]');
+  pipeLogs(child.stderr, '[laya!]');
+
+  child.on('error', (err) => {
+    state.error = err.message;
+    setStatus(`Gagal menjalankan laya.exe: ${err.message}`, { ready: false });
+  });
+
+  child.on('exit', (code, signal) => {
+    const wasCurrent = state.child === child;
+    if (wasCurrent) state.child = null;
+    // Intentional stop (server shutdown or model switch) or an already-replaced child:
+    // no crash message, no CPU fallback.
+    if (state.shuttingDown || child.intentionalStop || !wasCurrent) return;
+    const wasReady = state.ready;
+    state.ready = false;
+    state.error = `laya.exe berhenti (code=${code}, signal=${signal})`;
+    log(state.error);
+    if (device !== 'cpu' && !state.triedCpuFallback) {
+      state.triedCpuFallback = true;
+      setStatus(`laya.exe crash di device "${device}", memuat ulang dengan device cpu...`);
+      launch(modelPath, 'cpu');
+    } else {
+      setStatus(
+        `Model gagal berjalan: ${state.error}${wasReady ? '' : '. Periksa log konsol server.'}`
+      );
+    }
+  });
+  return child;
+}
+
+// laya's "--device auto" picks Vulkan device 0, which on laptops is often the integrated GPU
+// (measured here: Intel UHD ~2.4 s vs GTX 1650 ~0.13 s for a 10-text batch). For "auto" we run
+// `laya info` once, parse the "ggml_vulkan: N = <name> | uma: X" lines and pick the first
+// discrete GPU (uma: 0). Falls back to "auto" if nothing can be parsed.
+function resolveDevice(requested, modelPath) {
+  if (requested !== 'auto') return Promise.resolve(requested);
+  return new Promise((resolve) => {
+    execFile(EXE_PATH, ['info', modelPath], { cwd: path.dirname(EXE_PATH), timeout: 120000, windowsHide: true },
+      (err, stdout, stderr) => {
+        const text = `${stdout || ''}\n${stderr || ''}`;
+        const devices = [...text.matchAll(/ggml_vulkan:\s*(\d+)\s*=\s*([^|\r\n]+)\|\s*uma:\s*(\d)/g)].map((m) => ({
+          index: Number(m[1]),
+          name: m[2].trim(),
+          uma: m[3] === '1',
+        }));
+        const discrete = devices.find((d) => !d.uma);
+        if (discrete && devices.length > 1) {
+          log(`Device auto -> vulkan:${discrete.index} (${discrete.name})`);
+          resolve(`vulkan:${discrete.index}`);
+        } else {
+          resolve('auto');
+        }
+      });
+  });
+}
+
+async function waitForHealth(child) {
+  const deadline = Date.now() + HEALTH_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (state.child !== child || child.exitCode !== null) return false;
+    try {
+      const h = await fetchJson(`http://${LAYA_HOST}:${LAYA_PORT}/health`, {}, 3000);
+      if (h && (h.status === 'ok' || h.status === 'ready' || h.status)) {
+        return h;
+      }
+    } catch {
+      /* not up yet */
+    }
+    await sleep(HEALTH_POLL_MS);
+  }
+  return null;
+}
+
+async function launch(modelPath, device, gen = state.gen) {
+  if (gen !== state.gen) return;
+  state.ready = false;
+  state.model = path.basename(modelPath);
+  state.modelPath = modelPath;
+  state.device = null;
+  if (!process.env.LAYA_PORT) {
+    for (let i = 0; i < PORT_TRIES && !(await isPortFree(LAYA_PORT)); i++) LAYA_PORT++;
+  }
+  if (!(await isPortFree(LAYA_PORT))) {
+    state.error = `Port ${LAYA_PORT} sudah dipakai`;
+    setStatus(
+      `Port laya ${LAYA_PORT} sudah dipakai proses lain (mungkin instance lain aplikasi ini). Hentikan proses itu atau set env LAYA_PORT lain, lalu restart.`
+    );
+    return;
+  }
+  if (gen !== state.gen) return; // superseded by a model switch while probing ports
+  setStatus(`Memuat model ${state.model} (device: ${device})...`);
+  const child = startLaya(modelPath, device);
+  const health = await waitForHealth(child);
+  if (!health) {
+    if (state.child === child && child.exitCode === null) {
+      setStatus('Timeout menunggu laya.exe siap. Periksa log konsol server.');
+    }
+    return;
+  }
+  state.device = health.device || device;
+  state.error = null;
+  setStatus(`Model siap: ${state.model} (device: ${state.device})`, { ready: true });
+}
+
+// Stop the current laya child on purpose and wait for it to exit. The exit handler sees
+// child.intentionalStop and skips the crash message / CPU fallback.
+function stopChild(timeoutMs = 15000) {
+  const child = state.child;
+  if (!child || child.exitCode !== null || child.signalCode !== null) {
+    state.child = null;
+    return Promise.resolve();
+  }
+  child.intentionalStop = true;
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(t);
+      if (state.child === child) state.child = null;
+      resolve();
+    };
+    const t = setTimeout(() => {
+      // Did not exit in time: force kill the whole tree (Windows) and move on.
+      if (process.platform === 'win32') execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], () => {});
+      else child.kill('SIGKILL');
+      setTimeout(done, 1000);
+    }, timeoutMs);
+    child.once('exit', done);
+    try {
+      child.kill();
+    } catch {
+      done();
+    }
+  });
+}
+
+// Switch the active model (POST /api/model). Runs in the background; the UI polls /api/status.
+async function switchModel(modelPath) {
+  const gen = ++state.gen;
+  state.switching = true;
+  state.ready = false;
+  state.model = path.basename(modelPath);
+  state.modelPath = modelPath;
+  state.device = null;
+  state.error = null;
+  state.triedCpuFallback = false;
+  try {
+    setStatus(`Mengganti model ke ${state.model}: menghentikan model lama...`);
+    await stopChild();
+    // Give the OS a moment to release the laya port before relaunching on it.
+    for (let i = 0; i < 20 && !(await isPortFree(LAYA_PORT)); i++) await sleep(250);
+    if (gen !== state.gen) return; // superseded by a newer switch request
+    setStatus(`Mendeteksi GPU & memuat model ${state.model}...`);
+    const device = await resolveDevice(LAYA_DEVICE, modelPath);
+    await launch(modelPath, device, gen);
+  } catch (err) {
+    state.error = err.message;
+    setStatus(`Gagal mengganti model: ${err.message}`, { ready: false });
+  } finally {
+    if (gen === state.gen) state.switching = false;
+  }
+}
+
+async function boot() {
+  // Ensure binary
+  if (!fs.existsSync(EXE_PATH)) {
+    setStatus('Mengunduh laya.exe (sekali saja)...');
+    try {
+      await setup();
+    } catch (err) {
+      state.error = err.message;
+      setStatus(`Gagal mengunduh laya.exe: ${err.message}. Jalankan "npm run setup" manual.`);
+      return;
+    }
+  }
+
+  // Wait for a model file. A POST /api/model during boot takes over (state.gen changes).
+  const bootGen = state.gen;
+  let modelPath = findModel();
+  if (!modelPath) {
+    setStatus('Model .gguf belum ada di folder models/. Taruh file model di sana (dicek tiap 5 detik).', {
+      model: null,
+    });
+    while (!modelPath && !state.shuttingDown && !state.gen) {
+      await sleep(MODEL_POLL_MS);
+      modelPath = findModel();
+    }
+    if (state.shuttingDown || state.gen !== bootGen) return; // a model was picked via /api/model
+    setStatus(`Model ditemukan: ${path.basename(modelPath)}, menunggu file selesai disalin (load)...`);
+    await waitForStableFile(modelPath);
+  }
+  setStatus(`Mendeteksi GPU & memuat model ${path.basename(modelPath)}...`, { model: path.basename(modelPath) });
+  if (state.gen !== bootGen) return;
+  const device = await resolveDevice(LAYA_DEVICE, modelPath);
+  await launch(modelPath, device, bootGen);
+}
+
+function shutdown() {
+  if (state.shuttingDown) return;
+  state.shuttingDown = true;
+  const child = state.child;
+  if (child && child.exitCode === null) {
+    try {
+      child.kill();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+process.on('exit', shutdown);
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK']) {
+  process.on(sig, () => {
+    shutdown();
+    process.exit(0);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Scoring
+// ---------------------------------------------------------------------------
+
+function num(v) {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function round4(v) {
+  return Math.round(v * 10000) / 10000;
+}
+
+function clamp(v, lo, hi) {
+  return Math.min(hi, Math.max(lo, v));
+}
+
+// Probabilities as a {key: p} map. Laya returns an object; also accept an array of
+// [label, p] or {label, probability} to be defensive.
+function probMap(answer) {
+  const out = {};
+  const raw = answer?.probabilities ?? answer?.probs ?? answer?.scores;
+  if (Array.isArray(raw)) {
+    raw.forEach((item, i) => {
+      if (Array.isArray(item)) out[String(item[0]).toLowerCase()] = num(item[1]);
+      else if (item && typeof item === 'object') {
+        const k = String(item.label ?? item.choice ?? item.name ?? i).toLowerCase();
+        out[k] = num(item.probability ?? item.p ?? item.score);
+      } else out[String(i)] = num(item);
+    });
+  } else if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw)) out[k.toLowerCase()] = num(v);
+  }
+  return out;
+}
+
+// action.act_probability (1 if missing)
+function actOf(answer) {
+  const a = answer?.action?.act_probability ?? answer?.act_probability;
+  return a === undefined || a === null ? 1 : round4(num(a));
+}
+
+function optionsWith(mode, probs) {
+  return MODES[mode].options.map((o, i) => ({ key: o.key, text: o.text, prob: round4(num(probs[i])) }));
+}
+
+// sentiment3 - choice answer (verified):
+//   { type:"choice", choice:"negative", confidence:0.50,
+//     probabilities:{positive:0.0075, neutral:..., negative:...}, action:{act_probability:1} }
+function parseChoice(answer) {
+  const p = probMap(answer);
+  const out = { positive: num(p.positive), neutral: num(p.neutral), negative: num(p.negative) };
+  const total = out.positive + out.neutral + out.negative;
+  let label = String(answer?.choice ?? answer?.label ?? '').toLowerCase();
+  if (total > 0) {
+    if (Math.abs(total - 1) > 0.01) for (const k of LABELS) out[k] /= total;
+  } else if (LABELS.includes(label)) {
+    out[label] = 1; // no probabilities returned: trust the choice
+  }
+  if (!LABELS.includes(label)) label = LABELS.reduce((a, b) => (out[b] > out[a] ? b : a));
+  const score = round4(out.positive - out.negative);
+  const confidence =
+    answer?.confidence !== undefined ? num(answer.confidence) : Math.max(out.positive, out.neutral, out.negative);
+  return {
+    label,
+    score,
+    value: score,
+    confidence: round4(confidence),
+    act: actOf(answer),
+    options: optionsWith('sentiment3', [out.positive, out.neutral, out.negative]),
+  };
+}
+
+// binary - noul answer (observed on laya):
+//   { type:"noul", noul:0.9218, confidence:0.9218, action:{act_probability:1} }
+// `noul` is P(true); no probabilities object is returned, but {false, true} is accepted if present.
+function parseNoul(answer) {
+  let pTrue;
+  if (answer?.noul !== undefined && answer?.noul !== null && typeof answer.noul !== 'object') {
+    pTrue = num(answer.noul);
+  } else {
+    const p = probMap(answer);
+    if (p.true !== undefined || p.false !== undefined) {
+      const t = num(p.true);
+      const f = num(p.false);
+      pTrue = t + f > 0 ? t / (t + f) : 0.5;
+    } else if (typeof answer?.value === 'boolean') {
+      pTrue = answer.value ? 1 : 0;
+    } else {
+      pTrue = num(answer?.probability ?? answer?.p ?? 0.5);
+    }
+  }
+  pTrue = clamp(pTrue, 0, 1);
+  const confidence = answer?.confidence !== undefined ? num(answer.confidence) : Math.max(pTrue, 1 - pTrue);
+  return {
+    label: pTrue >= 0.5 ? 'positive' : 'negative',
+    score: round4(2 * pTrue - 1),
+    value: round4(pTrue),
+    confidence: round4(confidence),
+    act: actOf(answer),
+    options: optionsWith('binary', [1 - pTrue, pTrue]),
+  };
+}
+
+function labelForRating(rating) {
+  if (rating >= SCALE_POSITIVE_THRESHOLD) return 'positive';
+  if (rating <= SCALE_NEGATIVE_THRESHOLD) return 'negative';
+  return 'neutral';
+}
+
+// scale5 - score answer (observed on laya):
+//   { type:"score", score:3.5271 /* expected level 0..4 */, confidence:0.655,
+//     legend:{"0":"...", ..., "4":"..."}, probabilities:{"0":0.012, ..., "4":0.8367},
+//     action:{act_probability:1} }
+// rating (1..5) = expected level + 1.
+function parseScore(answer) {
+  const n = MODES.scale5.options.length;
+  const p = probMap(answer);
+  const probs = [];
+  for (let i = 0; i < n; i++) probs.push(num(p[String(i)]));
+  const total = probs.reduce((a, b) => a + b, 0);
+  if (total > 0 && Math.abs(total - 1) > 0.01) for (let i = 0; i < n; i++) probs[i] /= total;
+  let level;
+  if (answer?.score !== undefined && answer?.score !== null) level = num(answer.score);
+  else if (total > 0) level = probs.reduce((acc, q, i) => acc + q * i, 0);
+  else level = (n - 1) / 2;
+  const rating = clamp(level + 1, 1, n);
+  const confidence = answer?.confidence !== undefined ? num(answer.confidence) : Math.max(...probs);
+  return {
+    label: labelForRating(rating),
+    score: round4((rating - 3) / 2),
+    value: round4(rating),
+    confidence: round4(confidence),
+    act: actOf(answer),
+    options: optionsWith('scale5', probs),
+  };
+}
+
+const PARSERS = { sentiment3: parseChoice, binary: parseNoul, scale5: parseScore };
+
+// ---------------------------------------------------------------------------
+// Generic questions (every mode) - lets the UI render any question set the same way:
+//   { id, type:"choice"|"noul"|"score", instructions,
+//     headline,   // Studio-style: choice -> winning key; noul -> "P(true)=0.4390"; score -> level "1.9238"
+//     value,      // choice: prob of the winner; noul: P(true); score: expected level (0-based)
+//     winner,     // key of the highest-prob option
+//     confidence, act, options:[{key, text, prob}] }
+// ---------------------------------------------------------------------------
+
+function argmaxKey(options) {
+  let best = null;
+  for (const o of options) if (!best || o.prob > best.prob) best = o;
+  return best ? best.key : '';
+}
+
+function headlineOf(type, value, winner) {
+  if (type === 'choice') return winner;
+  if (type === 'noul') return `P(true)=${value.toFixed(4)}`;
+  return value.toFixed(4);
+}
+
+// Option keys of a choice question: criteria keys (object) in their original order, otherwise
+// the probability keys laya returned.
+function choiceKeys(q, answer) {
+  if (q?.criteria && typeof q.criteria === 'object' && !Array.isArray(q.criteria)) return Object.keys(q.criteria);
+  const raw = answer?.probabilities;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return Object.keys(raw);
+  return Object.keys(probMap(answer));
+}
+
+// Number of levels of a score question: criteria array > legend > probabilities.
+function scoreLevels(q, answer) {
+  if (Array.isArray(q?.criteria) && q.criteria.length) return q.criteria.length;
+  const legend = answer?.legend && typeof answer.legend === 'object' ? Object.keys(answer.legend).length : 0;
+  return legend || Object.keys(probMap(answer)).length;
+}
+
+// Builds a generic question from a laya answer. `texts` (optional) overrides the option texts in
+// option order (used by the sentiment modes for their Bahasa Indonesia labels).
+function genericQuestion(id, q, answer, texts = null) {
+  const type = q.type;
+  const confidence = answer?.confidence;
+  let options;
+  let value;
+  if (type === 'choice') {
+    const p = probMap(answer);
+    const keys = choiceKeys(q, answer);
+    const probs = keys.map((k) => num(p[String(k).toLowerCase()]));
+    const total = probs.reduce((a, b) => a + b, 0);
+    const chosen = String(answer?.choice ?? '');
+    if (total > 0 && Math.abs(total - 1) > 0.01) for (let i = 0; i < probs.length; i++) probs[i] /= total;
+    else if (total <= 0 && keys.includes(chosen)) probs[keys.indexOf(chosen)] = 1;
+    options = keys.map((k, i) => ({ key: String(k), text: texts?.[i] ?? String(k), prob: round4(probs[i]) }));
+    value = options.length ? Math.max(...options.map((o) => o.prob)) : 0;
+  } else if (type === 'noul') {
+    const pTrue = parseNoul(answer).value;
+    options = [
+      { key: 'false', text: texts?.[0] ?? 'false', prob: round4(1 - pTrue) },
+      { key: 'true', text: texts?.[1] ?? 'true', prob: round4(pTrue) },
+    ];
+    value = pTrue;
+  } else {
+    const n = scoreLevels(q, answer);
+    const p = probMap(answer);
+    const probs = [];
+    for (let i = 0; i < n; i++) probs.push(num(p[String(i)]));
+    const total = probs.reduce((a, b) => a + b, 0);
+    if (total > 0 && Math.abs(total - 1) > 0.01) for (let i = 0; i < n; i++) probs[i] /= total;
+    if (answer?.score !== undefined && answer?.score !== null) value = num(answer.score);
+    else if (total > 0) value = probs.reduce((acc, x, i) => acc + x * i, 0);
+    else value = (n - 1) / 2;
+    const legend = answer?.legend || {};
+    options = probs.map((x, i) => {
+      const desc = legend[String(i)] ?? (Array.isArray(q.criteria) ? q.criteria[i] : '');
+      return { key: String(i), text: texts?.[i] ?? `${i}: ${desc ?? ''}`, prob: round4(x) };
+    });
+  }
+  value = round4(value);
+  const winner = argmaxKey(options);
+  return {
+    id,
+    type,
+    instructions: q.instructions ?? '',
+    headline: headlineOf(type, value, winner),
+    value,
+    winner,
+    confidence: round4(confidence !== undefined ? num(confidence) : Math.max(0, ...options.map((o) => o.prob))),
+    act: actOf(answer),
+    options,
+  };
+}
+
+function sentimentQuestion(mode, answer) {
+  return genericQuestion('sentiment', MODES[mode].question, answer, MODES[mode].options.map((o) => o.text));
+}
+
+// Top-level sentiment fields when a result has no sentiment question (preset mode without it).
+const NULL_SENTIMENT = { label: null, score: null, value: null, confidence: null, act: null, options: null };
+
+// ---------------------------------------------------------------------------
+// Presets (laya GET /v1/presets), cached per loaded model
+// ---------------------------------------------------------------------------
+
+const PRESET_MODE = 'preset';
+const presetCache = { key: null, list: null, pending: null };
+
+// Full laya preset objects: [{name, title, blurb, state_key, state, questions}].
+async function getPresets() {
+  const key = `${state.model}#${state.gen}`;
+  if (presetCache.key === key && presetCache.list) return presetCache.list;
+  if (presetCache.key === key && presetCache.pending) return presetCache.pending;
+  presetCache.key = key;
+  presetCache.list = null;
+  const pending = fetchJson(`http://${LAYA_HOST}:${LAYA_PORT}/v1/presets`, {}, 30000)
+    .then((body) => {
+      const list = (Array.isArray(body) ? body : body?.presets ?? []).filter(
+        (p) => p && typeof p.name === 'string' && p.questions && typeof p.questions === 'object'
+      );
+      if (presetCache.key === key) presetCache.list = list;
+      return list;
+    })
+    .finally(() => {
+      if (presetCache.pending === pending) presetCache.pending = null;
+    });
+  presetCache.pending = pending;
+  return pending;
+}
+
+function presetSummary(p) {
+  return {
+    name: p.name,
+    title: p.title ?? p.name,
+    blurb: p.blurb ?? '',
+    state_key: p.state_key,
+    question_count: Object.keys(p.questions).length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// laya calls
+// ---------------------------------------------------------------------------
+
+// Asks `questions` for every state. Returns one answers map ({id: answer}) per state.
+async function decideAll(states, questions) {
+  // Preferred: one batch call. Verified from laya server.cpp: response is
+  //   { results: [ { model, family?, route?, answers:{<id>:{...}}, usage:{...} }, ... ] }
+  // in the same order as `states`.
+  try {
+    const resp = await fetchJson(`http://${LAYA_HOST}:${LAYA_PORT}/v1/decide/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ states, questions }),
+    }, 10 * 60 * 1000);
+    const list = Array.isArray(resp) ? resp : resp?.results ?? resp?.responses;
+    if (!Array.isArray(list) || list.length !== states.length) throw new Error('unexpected batch response shape');
+    return list.map((r) => {
+      if (!r?.answers || typeof r.answers !== 'object') throw new Error('batch result missing answers');
+      return r.answers;
+    });
+  } catch (err) {
+    log(`Batch gagal (${err.message}), fallback ke /v1/decide per teks`);
+  }
+  const out = [];
+  for (const s of states) {
+    const resp = await fetchJson(`http://${LAYA_HOST}:${LAYA_PORT}/v1/decide`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state: s, questions }),
+    });
+    if (!resp?.answers || typeof resp.answers !== 'object') throw new Error('laya response missing answers');
+    out.push(resp.answers);
+  }
+  return out;
+}
+
+function sentimentAnswerOf(answers) {
+  return answers?.sentiment ?? answers?.[Object.keys(answers || {})[0]];
+}
+
+async function scoreTexts(texts, mode) {
+  const answersList = await decideAll(texts.map((text) => ({ text })), { sentiment: MODES[mode].question });
+  const parse = PARSERS[mode];
+  return answersList.map((answers) => {
+    const a = sentimentAnswerOf(answers);
+    if (!a) throw new Error('laya response missing sentiment answer');
+    return { ...parse(a), questions: [sentimentQuestion(mode, a)] };
+  });
+}
+
+// Preset mode: each text goes into {[state_key]: text} (other example-state fields are left out).
+// With includeSentiment the sentiment3 question is asked in the same call under id "sentiment".
+async function scorePreset(texts, preset, includeSentiment) {
+  const questions = {};
+  if (includeSentiment) questions.sentiment = MODES.sentiment3.question;
+  for (const [id, q] of Object.entries(preset.questions)) if (id !== 'sentiment' || !includeSentiment) questions[id] = q;
+  const answersList = await decideAll(texts.map((text) => ({ [preset.state_key]: text })), questions);
+  return answersList.map((answers) => {
+    const qs = [];
+    let top = NULL_SENTIMENT;
+    if (includeSentiment) {
+      const a = answers.sentiment;
+      if (!a) throw new Error('laya response missing sentiment answer');
+      top = parseChoice(a);
+      qs.push(sentimentQuestion('sentiment3', a));
+    }
+    for (const [id, q] of Object.entries(questions)) {
+      if (includeSentiment && id === 'sentiment') continue;
+      const a = answers[id];
+      if (!a) throw new Error(`laya response missing answer "${id}"`);
+      qs.push(genericQuestion(id, q, a));
+    }
+    return { ...top, questions: qs };
+  });
+}
+
+function labelForAverage(score) {
+  if (score > AVG_POSITIVE_THRESHOLD) return 'positive';
+  if (score < AVG_NEGATIVE_THRESHOLD) return 'negative';
+  return 'neutral';
+}
+
+// Option probability of a result/average, matched by key (falls back to position).
+function optionProb(r, key, i) {
+  const list = Array.isArray(r?.options) ? r.options : [];
+  return num((list.find((x) => String(x?.key) === key) ?? list[i])?.prob);
+}
+
+// Means of score, value, confidence and each option probability. The average label is
+// derived per mode from the mean headline number:
+//   sentiment3: mean score with the +-0.15 thresholds
+//   binary:     mean P(positif) >= 0.5
+//   scale5:     mean rating >= 3.5 / <= 2.5
+function buildAverage(results, mode, hasSentiment = true) {
+  const n = results.length;
+  const mean = (f) => (n ? round4(results.reduce((a, r) => a + num(f(r)), 0) / n) : 0);
+  const questions = averageQuestions(results);
+  if (mode === PRESET_MODE && !hasSentiment) return { ...NULL_SENTIMENT, count: n, questions };
+  const sentMode = mode === PRESET_MODE ? 'sentiment3' : mode;
+  const score = mean((r) => r.score);
+  const value = mean((r) => r.value);
+  let label;
+  if (sentMode === 'binary') label = value >= 0.5 ? 'positive' : 'negative';
+  else if (sentMode === 'scale5') label = labelForRating(value);
+  else label = labelForAverage(score);
+  return {
+    score,
+    label,
+    value,
+    count: n,
+    options: MODES[sentMode].options.map((o, i) => ({ key: o.key, text: o.text, prob: mean((r) => optionProb(r, o.key, i)) })),
+    confidence: mean((r) => r.confidence),
+    questions,
+  };
+}
+
+// Per question id (in first-seen order): mean option probs, confidence, act and value; the headline
+// is recomputed from the means (choice winner = argmax of mean probs).
+function averageQuestions(results) {
+  const groups = new Map();
+  for (const r of results) {
+    for (const q of Array.isArray(r?.questions) ? r.questions : []) {
+      if (!q || typeof q.id !== 'string') continue;
+      if (!groups.has(q.id)) groups.set(q.id, []);
+      groups.get(q.id).push(q);
+    }
+  }
+  return [...groups.values()].map((list) => {
+    const first = list[0];
+    const n = list.length;
+    const mean = (f) => round4(list.reduce((a, q) => a + num(f(q)), 0) / n);
+    const firstOpts = Array.isArray(first.options) ? first.options : [];
+    const options = firstOpts.map((o, i) => ({
+      key: String(o.key),
+      text: o.text,
+      prob: mean((q) => optionProb(q, String(o.key), i)),
+    }));
+    const winner = argmaxKey(options);
+    const value = mean((q) => q.value);
+    return {
+      id: first.id,
+      type: first.type,
+      instructions: first.instructions ?? '',
+      headline: headlineOf(first.type, value, winner),
+      value,
+      winner,
+      confidence: mean((q) => q.confidence),
+      act: mean((q) => (q.act === undefined || q.act === null ? 1 : q.act)),
+      options,
+      count: n,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// HTTP API
+// ---------------------------------------------------------------------------
+
+const app = express();
+app.use(express.json({ limit: '20mb' }));
+app.use(express.static(path.join(ROOT, 'public')));
+
+function statusBody() {
+  return {
+    ready: state.ready,
+    model: state.model,
+    device: state.device,
+    message: state.message,
+    switching: state.switching,
+    models: listModels(),
+  };
+}
+
+app.get('/api/status', (req, res) => {
+  res.json(statusBody());
+});
+
+// Switch the active model. Responds right away (202); the UI polls /api/status.
+// The choice lives in memory only (a restart goes back to the default pick).
+app.post('/api/model', (req, res) => {
+  const file = req.body?.file;
+  // Only a bare *.gguf file name that currently exists in models/ (no path traversal).
+  const valid =
+    typeof file === 'string' &&
+    file === path.basename(file) &&
+    !file.includes('..') &&
+    listModels().some((m) => m.file === file);
+  if (!valid) {
+    return res
+      .status(400)
+      .json({ error: 'File model tidak valid. Pilih salah satu file .gguf di folder models/.', ...statusBody() });
+  }
+  if (file === state.model && (state.ready || state.switching)) return res.json(statusBody());
+  if (!fs.existsSync(EXE_PATH)) {
+    return res.status(503).json({ error: 'laya.exe belum siap, coba lagi nanti.', ...statusBody() });
+  }
+  switchModel(path.join(MODELS_DIR, file)).catch((err) => log(`Switch error: ${err.message}`));
+  res.status(202).json(statusBody());
+});
+
+function notReady(res) {
+  return res.status(503).json({ error: state.message, message: state.message, switching: state.switching });
+}
+
+// Preset list from laya (cached per model): [{name, title, blurb, state_key, question_count}].
+app.get('/api/presets', async (req, res) => {
+  if (state.switching || !state.ready) return notReady(res);
+  try {
+    res.json((await getPresets()).map(presetSummary));
+  } catch (err) {
+    log(`Presets error: ${err.message}`);
+    res.status(502).json({ error: `Gagal memuat preset: ${err.message}` });
+  }
+});
+
+app.post('/api/score', async (req, res) => {
+  const raw = req.body?.texts;
+  if (!Array.isArray(raw)) return res.status(400).json({ error: 'Body harus berupa {"texts": string[]}' });
+  const mode = req.body?.mode ?? DEFAULT_MODE;
+  if (typeof mode !== 'string' || (!MODES[mode] && mode !== PRESET_MODE)) {
+    return res
+      .status(400)
+      .json({ error: `Mode tidak dikenal: ${mode}. Pilihan: ${[...Object.keys(MODES), PRESET_MODE].join(', ')}.` });
+  }
+  const isPreset = mode === PRESET_MODE;
+  const presetName = req.body?.preset;
+  if (isPreset && (typeof presetName !== 'string' || !presetName)) {
+    return res.status(400).json({ error: 'Mode preset butuh field "preset" (nama preset).' });
+  }
+  const includeSentiment = req.body?.include_sentiment !== false;
+  const texts = raw
+    .filter((t) => typeof t === 'string' || typeof t === 'number')
+    .map((t) => String(t).trim())
+    .filter(Boolean);
+  if (!texts.length) return res.status(400).json({ error: 'Tidak ada teks yang valid untuk dinilai.' });
+  if (texts.length > MAX_TEXTS) {
+    return res.status(400).json({ error: `Maksimal ${MAX_TEXTS} teks per permintaan (diterima ${texts.length}).` });
+  }
+  if (state.switching || !state.ready) return notReady(res);
+
+  const t0 = Date.now();
+  const model = state.model;
+  let preset = null;
+  if (isPreset) {
+    try {
+      preset = (await getPresets()).find((p) => p.name === presetName) || null;
+    } catch (err) {
+      log(`Presets error: ${err.message}`);
+      return res.status(502).json({ error: `Gagal memuat preset: ${err.message}` });
+    }
+    if (!preset) return res.status(400).json({ error: `Preset tidak dikenal: ${presetName}.` });
+  }
+  try {
+    const scored = isPreset ? await scorePreset(texts, preset, includeSentiment) : await scoreTexts(texts, mode);
+    // index is 0-based (frontend displays index + 1)
+    const results = scored.map((s, index) => ({ index, text: texts[index], ...s }));
+    res.json({
+      mode,
+      model,
+      preset: preset ? preset.name : null,
+      preset_title: preset ? preset.title ?? preset.name : null,
+      include_sentiment: isPreset ? includeSentiment : true,
+      results,
+      average: buildAverage(results, mode, !isPreset || includeSentiment),
+      latency_ms: Date.now() - t0,
+    });
+  } catch (err) {
+    log(`Scoring error: ${err.message}`);
+    res.status(502).json({ error: `Gagal menilai teks: ${err.message}` });
+  }
+});
+
+function timestamp(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+// Results + Summary sheets for the sentiment modes (sentiment3 / binary / scale5).
+function addSentimentSheets(wb, { results, average, mode, model, body }) {
+  const def = MODES[mode];
+  // Results: No, Teks, Label, Skor (-1..1), [value column per mode], one % column per option,
+  // Confidence, Act. sentiment3 has no value column (value === Skor).
+  const ws = wb.addWorksheet('Results', { views: [{ state: 'frozen', ySplit: 1 }] });
+  const columns = [
+    { header: 'No', key: 'no', width: 6 },
+    { header: 'Teks', key: 'text', width: 70 },
+    { header: 'Label', key: 'label', width: 12 },
+    { header: 'Skor (-1..1)', key: 'score', width: 12 },
+  ];
+  if (def.valueHeader) columns.push({ header: def.valueHeader, key: 'value', width: 14 });
+  def.options.forEach((o, i) => columns.push({ header: o.text, key: `opt${i}`, width: 18 }));
+  columns.push({ header: 'Confidence', key: 'conf', width: 12 }, { header: 'Act', key: 'act', width: 10 });
+  ws.columns = columns;
+  ws.getRow(1).font = { bold: true };
+  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7E6E6' } };
+
+  const rowOf = (r, i) => {
+    const row = {
+      no: Number.isInteger(r.index) ? r.index + 1 : i + 1,
+      text: String(r.text ?? ''),
+      label: String(r.label ?? ''),
+      score: num(r.score),
+      conf: num(r.confidence),
+      act: r.act === undefined || r.act === null ? 1 : num(r.act),
+    };
+    if (def.valueHeader) row.value = num(r.value);
+    def.options.forEach((o, j) => (row[`opt${j}`] = optionProb(r, o.key, j)));
+    return row;
+  };
+  results.forEach((r, i) => {
+    const row = ws.addRow(rowOf(r, i));
+    row.getCell('text').alignment = { wrapText: true, vertical: 'top' };
+  });
+  const avgData = rowOf(average, 0);
+  avgData.no = '';
+  avgData.text = `Rata-rata (${num(average.count) || results.length} teks)`;
+  avgData.act = '';
+  if (average.confidence === undefined) avgData.conf = '';
+  const avgRow = ws.addRow(avgData);
+  avgRow.font = { bold: true };
+  avgRow.border = { top: { style: 'thin' } };
+  ws.getColumn('score').numFmt = '0.0000';
+  if (mode === 'binary') ws.getColumn('value').numFmt = '0.00%';
+  if (mode === 'scale5') ws.getColumn('value').numFmt = '0.00';
+  def.options.forEach((o, i) => (ws.getColumn(`opt${i}`).numFmt = '0.00%'));
+  ws.getColumn('conf').numFmt = '0.00%';
+  ws.getColumn('act').numFmt = '0.00%';
+
+  const sum = wb.addWorksheet('Summary');
+  sum.columns = [
+    { header: 'Metric', key: 'k', width: 34 },
+    { header: 'Value', key: 'v', width: 40 },
+  ];
+  sum.getRow(1).font = { bold: true };
+  const counts = { positive: 0, neutral: 0, negative: 0 };
+  for (const r of results) if (counts[r.label] !== undefined) counts[r.label]++;
+  // [metric, value, numFmt?]
+  const rows = [
+    ['Mode', mode],
+    ['Model', model],
+    ['Jumlah teks', results.length],
+    ['Label rata-rata', String(average.label ?? '')],
+    [`Skor rata-rata (${def.scoreRule})`, num(average.score), '0.0000'],
+  ];
+  if (def.valueHeader) {
+    rows.push([`Rata-rata ${def.valueHeader}`, num(average.value), mode === 'binary' ? '0.00%' : '0.00']);
+  }
+  def.options.forEach((o, i) => rows.push([`Rata-rata ${o.text}`, optionProb(average, o.key, i), '0.00%']));
+  rows.push(['Rata-rata confidence', num(average.confidence), '0.00%']);
+  rows.push(['Jumlah positive', counts.positive]);
+  if (mode !== 'binary') rows.push(['Jumlah neutral', counts.neutral]);
+  rows.push(
+    ['Jumlah negative', counts.negative],
+    ['Latency (ms)', body.latency_ms !== undefined ? num(body.latency_ms) : ''],
+    ['Device', state.device || ''],
+    ['Diekspor', new Date().toISOString()],
+    ['Aturan label rata-rata', def.averageRule]
+  );
+  for (const [k, v, fmt] of rows) {
+    const row = sum.addRow({ k, v });
+    if (fmt) row.getCell('v').numFmt = fmt;
+  }
+}
+
+// Headline as an Excel cell value: choice -> winning key; noul -> P(true); score -> expected level.
+function headlineCell(q) {
+  if (!q) return '';
+  return q.type === 'choice' ? String(q.winner ?? q.headline ?? '') : num(q.value);
+}
+
+function questionsOf(r) {
+  return Array.isArray(r?.questions) ? r.questions.filter((q) => q && typeof q.id === 'string') : [];
+}
+
+// Results + Summary sheets for preset mode: No, Teks, [Label, Skor if the sentiment question is
+// included], then per preset question "<id>" (headline) and "<id> conf", plus an average row.
+function addPresetSheets(wb, { results, average, model, body }) {
+  const avgQuestions = Array.isArray(average?.questions) ? average.questions : averageQuestions(results);
+  // Question order: first seen across results (sentiment first, then the preset order).
+  const order = [];
+  const types = {};
+  for (const q of [...results.flatMap(questionsOf), ...avgQuestions]) {
+    if (!types[q.id]) {
+      types[q.id] = q.type;
+      order.push(q.id);
+    }
+  }
+  const hasSentiment = order.includes('sentiment');
+  const ids = order.filter((id) => id !== 'sentiment');
+
+  const ws = wb.addWorksheet('Results', { views: [{ state: 'frozen', ySplit: 1 }] });
+  const columns = [
+    { header: 'No', key: 'no', width: 6 },
+    { header: 'Teks', key: 'text', width: 70 },
+  ];
+  if (hasSentiment) {
+    columns.push({ header: 'Label', key: 'label', width: 12 }, { header: 'Skor (-1..1)', key: 'score', width: 12 });
+  }
+  ids.forEach((id, i) => {
+    columns.push({ header: id, key: `q${i}`, width: Math.max(12, id.length + 4) });
+    columns.push({ header: `${id} conf`, key: `c${i}`, width: Math.max(10, id.length + 7) });
+  });
+  ws.columns = columns;
+  ws.getRow(1).font = { bold: true };
+  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7E6E6' } };
+
+  const rowOf = (qs) => {
+    const byId = Object.fromEntries(qs.map((q) => [q.id, q]));
+    const row = {};
+    ids.forEach((id, i) => {
+      row[`q${i}`] = headlineCell(byId[id]);
+      row[`c${i}`] = byId[id] ? num(byId[id].confidence) : '';
+    });
+    return row;
+  };
+  results.forEach((r, i) => {
+    const row = ws.addRow({
+      no: Number.isInteger(r.index) ? r.index + 1 : i + 1,
+      text: String(r.text ?? ''),
+      ...(hasSentiment ? { label: String(r.label ?? ''), score: r.score === null ? '' : num(r.score) } : {}),
+      ...rowOf(questionsOf(r)),
+    });
+    row.getCell('text').alignment = { wrapText: true, vertical: 'top' };
+  });
+  const avgRow = ws.addRow({
+    no: '',
+    text: `Rata-rata (${num(average?.count) || results.length} teks)`,
+    ...(hasSentiment ? { label: String(average?.label ?? ''), score: num(average?.score) } : {}),
+    ...rowOf(avgQuestions),
+  });
+  avgRow.font = { bold: true };
+  avgRow.border = { top: { style: 'thin' } };
+  if (hasSentiment) ws.getColumn('score').numFmt = '0.0000';
+  ids.forEach((id, i) => {
+    if (types[id] === 'noul') ws.getColumn(`q${i}`).numFmt = '0.0000';
+    if (types[id] === 'score') ws.getColumn(`q${i}`).numFmt = '0.0000';
+    ws.getColumn(`c${i}`).numFmt = '0.00%';
+  });
+
+  const sum = wb.addWorksheet('Summary');
+  sum.columns = [
+    { header: 'Metric', key: 'k', width: 34 },
+    { header: 'Value', key: 'v', width: 40 },
+  ];
+  sum.getRow(1).font = { bold: true };
+  const rows = [
+    ['Mode', PRESET_MODE],
+    ['Preset', String(body.preset ?? '')],
+    ['Judul preset', String(body.preset_title ?? '')],
+    ['Model', model],
+    ['Jumlah teks', results.length],
+    ['Sentimen disertakan', hasSentiment ? 'ya' : 'tidak'],
+  ];
+  if (hasSentiment) {
+    rows.push(
+      ['Label sentimen rata-rata', String(average?.label ?? '')],
+      [`Skor sentimen rata-rata (${MODES.sentiment3.scoreRule})`, num(average?.score), '0.0000']
+    );
+  }
+  for (const q of avgQuestions) {
+    if (q.id === 'sentiment') continue;
+    rows.push([`Rata-rata ${q.id} (${q.type})`, headlineCell(q), q.type === 'choice' ? undefined : '0.0000']);
+  }
+  rows.push(
+    ['Latency (ms)', body.latency_ms !== undefined ? num(body.latency_ms) : ''],
+    ['Device', state.device || ''],
+    ['Diekspor', new Date().toISOString()]
+  );
+  for (const [k, v, fmt] of rows) {
+    const row = sum.addRow({ k, v });
+    if (fmt) row.getCell('v').numFmt = fmt;
+  }
+}
+
+// Detail sheet (all modes), long format: one row per option of every question of every text.
+function addDetailSheet(wb, results) {
+  const ws = wb.addWorksheet('Detail', { views: [{ state: 'frozen', ySplit: 1 }] });
+  ws.columns = [
+    { header: 'No', key: 'no', width: 6 },
+    { header: 'Teks', key: 'text', width: 50 },
+    { header: 'Pertanyaan', key: 'qid', width: 18 },
+    { header: 'Tipe', key: 'type', width: 8 },
+    { header: 'Jawaban', key: 'answer', width: 18 },
+    { header: 'Confidence', key: 'conf', width: 12 },
+    { header: 'Act', key: 'act', width: 10 },
+    { header: 'Opsi', key: 'opt', width: 40 },
+    { header: 'Prob (%)', key: 'prob', width: 10 },
+  ];
+  ws.getRow(1).font = { bold: true };
+  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7E6E6' } };
+  results.forEach((r, i) => {
+    const no = Number.isInteger(r.index) ? r.index + 1 : i + 1;
+    for (const q of questionsOf(r)) {
+      for (const o of Array.isArray(q.options) ? q.options : []) {
+        ws.addRow({
+          no,
+          text: String(r.text ?? ''),
+          qid: q.id,
+          type: q.type,
+          answer: String(q.headline ?? ''),
+          conf: num(q.confidence),
+          act: q.act === undefined || q.act === null ? 1 : num(q.act),
+          opt: String(o.text ?? o.key ?? ''),
+          prob: num(o.prob),
+        });
+      }
+    }
+  });
+  ws.getColumn('conf').numFmt = '0.00%';
+  ws.getColumn('act').numFmt = '0.00%';
+  ws.getColumn('prob').numFmt = '0.00%';
+}
+
+app.post('/api/export', async (req, res) => {
+  const body = req.body || {};
+  const results = Array.isArray(body.results) ? body.results : null;
+  if (!results || !results.length) return res.status(400).json({ error: 'Body harus berupa respons /api/score (results[]).' });
+  const isPreset = body.mode === PRESET_MODE;
+  const mode = isPreset || MODES[body.mode] ? body.mode : DEFAULT_MODE;
+  const hasSentiment = !isPreset || results.some((r) => questionsOf(r).some((q) => q.id === 'sentiment'));
+  const average =
+    body.average && typeof body.average === 'object' ? body.average : buildAverage(results, mode, hasSentiment);
+  const model = typeof body.model === 'string' && body.model ? body.model : state.model || '';
+
+  try {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'sentiment-with-decision-model';
+    wb.created = new Date();
+
+    if (isPreset) addPresetSheets(wb, { results, average, model, body });
+    else addSentimentSheets(wb, { results, average, mode, model, body });
+    addDetailSheet(wb, results);
+
+    const buf = await wb.xlsx.writeBuffer();
+    const presetTag = isPreset ? String(body.preset ?? '').replace(/[^A-Za-z0-9_-]/g, '') : '';
+    const filename = `${presetTag ? `preset-${presetTag}` : 'sentiment'}-${timestamp()}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(Buffer.from(buf));
+  } catch (err) {
+    log(`Export error: ${err.message}`);
+    res.status(500).json({ error: `Gagal membuat file Excel: ${err.message}` });
+  }
+});
+
+
+// Plain http server instead of app.listen(): Express 5 routes listen errors into the
+// once-only callback, which would break retrying the next port.
+let webPort = PORT;
+const httpServer = require('http').createServer(app);
+httpServer.on('listening', () => {
+  log(`Buka http://localhost:${webPort}`);
+  boot().catch((err) => {
+    state.error = err.message;
+    setStatus(`Error saat inisialisasi: ${err.message}`);
+  });
+});
+httpServer.on('error', (err) => {
+  if (err.code === 'EADDRINUSE' && !process.env.PORT && webPort < PORT + PORT_TRIES) {
+    log(`Port ${webPort} sudah dipakai, mencoba ${webPort + 1}...`);
+    httpServer.listen(++webPort);
+    return;
+  }
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[server] Port ${webPort} sudah dipakai. Set env PORT lain, mis. PORT=3001 npm start`);
+  } else {
+    console.error('[server] HTTP error:', err.message);
+  }
+  shutdown();
+  process.exit(1);
+});
+httpServer.listen(webPort);
