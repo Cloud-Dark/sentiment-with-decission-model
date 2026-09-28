@@ -1,0 +1,45 @@
+{
+  "id": "moderasi-komentar",
+  "title": "Moderasi komentar",
+  "description": "Moderasi komentar media sosial / forum: deteksi komentar toksik, pelecehan, ujaran kebencian, spam, dan tingkat keparahannya.",
+  "state_key": "text",
+  "extra_state": {},
+  "include_sentiment": false,
+  "questions": {
+    "toxic": {
+      "type": "noul",
+      "instructions": "Is this comment toxic: rude, insulting, vulgar, or disrespectful?",
+      "criteria": {
+        "false": "polite or neutral, even if it disagrees or criticizes",
+        "true": "rude, insulting, vulgar, or disrespectful"
+      }
+    },
+    "harassment": {
+      "type": "noul",
+      "instructions": "Does this comment harass, bully, threaten, or personally attack a specific person?"
+    },
+    "hate": {
+      "type": "noul",
+      "instructions": "Does this comment attack or demean people based on religion, ethnicity, race, gender, sexual orientation, disability, or nationality?"
+    },
+    "spam": {
+      "type": "noul",
+      "instructions": "Is this comment spam: an advertisement or promotion for a product, shop, website, gambling, or investment?",
+      "criteria": {
+        "false": "a personal opinion, question, or insult from a reader",
+        "true": "an advertisement or promotion"
+      }
+    },
+    "severity": {
+      "type": "score",
+      "instructions": "How harmful is this comment?",
+      "criteria": [
+        "not harmful: a normal, polite, or on-topic comment, including disagreement or criticism",
+        "somewhat harmful: rude words, insults, vulgarity, or spam advertising",
+        "very harmful: threats of violence, hate speech, or targeted harassment"
+      ]
+    }
+  },
+  "builtin": true,
+  "updated_at": "2026-09-28T00:00:00.000Z"
+}

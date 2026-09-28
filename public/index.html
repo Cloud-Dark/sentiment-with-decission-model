@@ -125,6 +125,61 @@
   .preset-box .hint { margin: 0; overflow-wrap: anywhere; }
   .check { display: inline-flex; align-items: center; gap: 8px; font-size: .88rem; cursor: pointer; }
   .check input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+  .lbl-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+  .pick { display: flex; gap: 8px; min-width: 0; }
+  .pick select { flex: 1 1 auto; width: auto; }
+  .pick button { flex: none; }
+  .dirty { color: var(--amber); font-size: .8rem; font-weight: 600; white-space: nowrap; }
+
+  /* Preset / template editor */
+  .ed { display: grid; gap: 14px; min-width: 0; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .ed-body { display: grid; gap: 14px; min-width: 0; }
+  .ed-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+  .ed-head h3 { margin: 0; font-size: .95rem; }
+  .ed input[type="text"], .ed select {
+    font: inherit; font-size: .9rem; color: var(--text); background: var(--surface); width: 100%; min-width: 0;
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px;
+  }
+  .ed textarea { background: var(--surface); min-height: 0; }
+  .ed input[type="text"]:focus, .ed select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+  .ed .invalid, .ed .invalid:focus { border-color: var(--neg); }
+  .mono { font-family: ui-monospace, Consolas, monospace !important; font-size: .85rem !important; }
+  .ed-grid { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ed-grid .full { grid-column: 1 / -1; }
+  .f { min-width: 0; }
+  .f > label, .sec-h { display: block; font-weight: 600; font-size: .82rem; margin-bottom: 3px; }
+  .ferr { display: block; color: var(--neg); font-size: .78rem; margin-top: 3px; overflow-wrap: anywhere; }
+  .ferr:empty { display: none; }
+  .ed-sec { min-width: 0; }
+  .ed-sec > .hint { margin: 0 0 8px; overflow-wrap: anywhere; }
+  code { font: .8rem ui-monospace, Consolas, monospace; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+  button.small { padding: 4px 10px; font-size: .82rem; }
+  button.icon { padding: 3px 8px; font-size: .85rem; color: var(--muted); }
+  .kv, .ops { display: grid; gap: 6px; }
+  .kv:not(:empty) { margin-bottom: 8px; }
+  .op-row { display: grid; gap: 6px; align-items: center; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; }
+  .op-row.lv { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .op-row.nl { grid-template-columns: auto minmax(0, 1fr); }
+  .op-tag { font: .78rem ui-monospace, Consolas, monospace; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; min-width: 3.4em; text-align: center; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+  .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-weight: 600; padding: 6px 10px; margin-bottom: -1px; }
+  .tabs button:hover:not(:disabled) { background: transparent; color: var(--text); }
+  .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  .qcard { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: grid; gap: 8px; margin-bottom: 10px; min-width: 0; }
+  .qc-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-width: 0; }
+  .qc-no { flex: none; font-size: .75rem; font-weight: 700; color: var(--muted); background: var(--surface-2); border-radius: 6px; padding: 1px 7px; font-variant-numeric: tabular-nums; }
+  .ed .qc-head input[type="text"] { flex: 1 1 140px; width: auto; }
+  .ed .qc-head select { flex: 0 1 auto; width: auto; }
+  .qc-tools { display: flex; gap: 2px; margin-left: auto; }
+  .qc-sub { font-size: .8rem; font-weight: 600; color: var(--muted); }
+  .ed-json { min-height: 260px !important; white-space: pre; overflow-wrap: normal; }
+  .edmsg { margin: 0; font-size: .85rem; padding: 8px 12px; border-radius: 8px; overflow-wrap: anywhere; }
+  .edmsg.ok { background: var(--pos-bg); color: var(--pos); }
+  .edmsg.err { background: var(--neg-bg); color: var(--neg); }
+  .edmsg.info { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+  .ed .actions { margin-top: 0; }
+  button.danger:hover:not(:disabled) { color: var(--neg); background: var(--neg-bg); }
+  .ed-out { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface); display: grid; gap: 8px; min-width: 0; }
 
   /* Results */
   .res-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
@@ -192,6 +247,12 @@
     .item-top { flex-wrap: wrap; }
     .item-top .txt { flex-basis: calc(100% - 90px); }
     .status select { flex: 1 1 calc(100% - 20px); width: 0; }
+    .ed-grid { grid-template-columns: minmax(0, 1fr); }
+    .op-row.ch { grid-template-columns: minmax(0, 1fr) auto; }
+    .op-row.ch > .k { grid-column: 1; grid-row: 1; }
+    .op-row.ch > .remove { grid-column: 2; grid-row: 1; }
+    .op-row.ch > .d { grid-column: 1 / -1; grid-row: 2; }
+    .op-row.ch + .op-row.ch { margin-top: 4px; }
   }
   [hidden] { display: none !important; }
 </style>
@@ -217,14 +278,75 @@
         <label><input type="radio" name="mode" value="sentiment3" checked><span>Positif/Netral/Negatif</span></label>
         <label><input type="radio" name="mode" value="binary"><span>Biner (Positif/Negatif)</span></label>
         <label><input type="radio" name="mode" value="scale5"><span>Skala 1–5<em class="tag">eksperimental</em></span></label>
-        <label><input type="radio" name="mode" value="preset"><span>Analisis Preset</span></label>
+        <label><input type="radio" name="mode" value="preset"><span>Preset / Template</span></label>
       </div>
       <span class="hint" id="modeHint"></span>
       <div class="preset-box" id="presetBox" hidden>
-        <label class="lbl" for="presetSel">Preset</label>
-        <select id="presetSel" disabled><option value="">Memuat preset…</option></select>
+        <div class="lbl-row"><label class="lbl" for="presetSel">Preset / template</label><span class="dirty" id="dirtyMain" hidden>• belum disimpan</span></div>
+        <div class="pick">
+          <select id="presetSel" disabled><option value="">Memuat…</option></select>
+          <button type="button" id="btnEditor" aria-expanded="false" aria-controls="editor">Atur preset</button>
+        </div>
         <p class="hint" id="presetHint"></p>
         <label class="check"><input type="checkbox" id="inclSent" checked> Sertakan sentimen</label>
+
+        <div class="ed" id="editor" hidden>
+          <div class="ed-head"><h3>Atur preset</h3><span class="dirty" id="dirtyEd" hidden>• belum disimpan</span><span class="hint" id="edSrc"></span></div>
+          <p class="edmsg info" id="edState" hidden></p>
+          <div class="ed-body" id="edBody">
+            <div class="ed-grid">
+              <div class="f"><label for="edTitle">Judul</label><input type="text" id="edTitle" maxlength="120" autocomplete="off"><span class="ferr" id="errTitle"></span></div>
+              <div class="f"><label for="edKey">state_key</label><input type="text" id="edKey" class="mono" maxlength="64" autocomplete="off" spellcheck="false"><span class="ferr" id="errKey"></span></div>
+              <div class="f full"><label for="edDesc">Deskripsi</label><textarea id="edDesc" rows="2" maxlength="1000"></textarea></div>
+              <label class="check full"><input type="checkbox" id="edIncl"> Sertakan sentimen (pertanyaan <code>sentiment</code> bawaan)</label>
+            </div>
+
+            <div class="ed-sec">
+              <span class="sec-h">Field state tambahan</span>
+              <p class="hint" id="edKeyHint"></p>
+              <div class="kv" id="edExtra"></div>
+              <span class="ferr" id="errExtra"></span>
+              <button type="button" class="small" id="edAddExtra">+ Field</button>
+            </div>
+
+            <div class="ed-sec">
+              <div class="tabs" role="tablist" aria-label="Mode editor">
+                <button type="button" role="tab" id="tabB" aria-selected="true" aria-controls="paneB">Question builder</button>
+                <button type="button" role="tab" id="tabJ" aria-selected="false" aria-controls="paneJ">Raw JSON</button>
+              </div>
+              <div id="paneB" role="tabpanel" aria-labelledby="tabB" style="padding-top:10px">
+                <div id="edQs"></div>
+                <span class="ferr" id="errQs"></span>
+                <button type="button" class="small" id="edAddQ">+ Tambah pertanyaan</button>
+              </div>
+              <div id="paneJ" role="tabpanel" aria-labelledby="tabJ" style="padding-top:10px" hidden>
+                <p class="hint" style="margin:0 0 6px">Berisi <code>state_key</code>, <code>extra_state</code>, <code>include_sentiment</code>, dan <code>questions</code>. Klik “Terapkan JSON” untuk memuatnya ke builder.</p>
+                <textarea id="edJson" class="ed-json mono" spellcheck="false" aria-label="Skema JSON"></textarea>
+                <span class="ferr" id="errJson"></span>
+                <div class="row" style="margin-top:8px"><button type="button" class="small" id="edApplyJson">Terapkan JSON</button></div>
+              </div>
+            </div>
+
+            <div class="ed-sec">
+              <label class="sec-h" for="edTest">Teks uji</label>
+              <textarea id="edTest" rows="2" placeholder="Teks untuk menguji pertanyaan…"></textarea>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="primary" id="edRun"><span class="spinner" id="edSpin" hidden></span><span>Uji</span></button>
+              <button type="button" id="edSave">Simpan template</button>
+              <button type="button" id="edCopy">Salin JSON</button>
+              <button type="button" id="edReset">Reset</button>
+              <span class="spacer"></span>
+              <button type="button" class="danger" id="edDel" hidden>Hapus</button>
+            </div>
+            <p class="edmsg" id="edMsg" role="status" hidden></p>
+            <div class="ed-out" id="edOut" hidden>
+              <span class="res-meta" id="edOutMeta"></span>
+              <div id="edOutBody"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <h2>Teks</h2>
@@ -295,7 +417,7 @@
     sentiment3: { name: 'Positif/Netral/Negatif', type: 'choice', hint: 'Tiga kelas. Nilai = skor terpadu P(positif) − P(negatif), rentang −1..1.' },
     binary: { name: 'Biner (Positif/Negatif)', type: 'noul', hint: 'Dua kelas. Nilai = peluang teks bernada positif (0–100%).' },
     scale5: { name: 'Skala 1–5', type: 'score', hint: 'Rating 1–5: 1 sangat negatif, 3 netral, 5 sangat positif. Eksperimental: teks yang jelas positif cenderung dinilai sekitar 3,2–3,5.' },
-    preset: { name: 'Analisis Preset', type: 'preset', hint: 'Jalankan sekumpulan pertanyaan keputusan (preset) untuk setiap teks.' }
+    preset: { name: 'Preset / Template', type: 'preset', hint: 'Jalankan sekumpulan pertanyaan keputusan (preset Laya atau template sendiri) untuk setiap teks.' }
   };
   var MODE_KEY = 'sentiment.mode';
   function modeOf(m) { return MODES.hasOwnProperty(m) ? m : 'sentiment3'; }
@@ -319,80 +441,697 @@
     });
   });
 
-  /* ---------- Presets ---------- */
+  /* ---------- Presets & templates (catalog + editor) ---------- */
   var PRESET_KEY = 'sentiment.preset', INCL_KEY = 'sentiment.includeSentiment';
-  var presets = [], presetsLoaded = false, presetsBusy = false, presetsModel = null, presetTimer = null;
-  var presetName = '', includeSentiment = true;
+  var QID_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/, MAX_OPTS = 16, MAX_QS = 32, MAX_TXT = 1000;
+  var TYPES = [['choice', 'choice'], ['noul', 'noul (ya/tidak)'], ['score', 'score']];
+  var presets = [], templates = [], presetsLoaded = false, presetsBusy = false, presetsModel = null, presetTimer = null;
+  var selKey = '', includeSentiment = true;
   try {
-    presetName = String(window.localStorage.getItem(PRESET_KEY) || '');
+    selKey = String(window.localStorage.getItem(PRESET_KEY) || '');
     includeSentiment = window.localStorage.getItem(INCL_KEY) !== '0';
   } catch (e) { /* storage unavailable */ }
+  if (selKey && !/^(t:|p:|new$)/.test(selKey)) selKey = 'p:' + selKey; // legacy: plain preset name
   $('inclSent').checked = includeSentiment;
-  function findPreset(n) { return presets.filter(function (p) { return p && String(p.name) === n; })[0] || null; }
+
+  // cur = {key, kind:'t'|'p'|'new', id, builtin}; draft = edited model; origDraft = as loaded.
+  var cur = null, draft = null, origSig = '', origDraft = null, itemBusy = false, itemToken = 0, itemErr = '';
+  var qRefs = [], extraRefs = [], jsonSnap = '', edBusy = false;
+
+  function str(v) { return v == null ? '' : String(v); }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function findPreset(n) { return presets.filter(function (p) { return String(p.name) === n; })[0] || null; }
+  function findTemplate(id) { return templates.filter(function (t) { return String(t.id) === id; })[0] || null; }
+  function keyExists(k) {
+    if (k === 'new') return true;
+    if (k.indexOf('t:') === 0) return !!findTemplate(k.slice(2));
+    if (k.indexOf('p:') === 0) return !!findPreset(k.slice(2));
+    return false;
+  }
+  function countLabel(n) { n = Number(n); return isFinite(n) ? ' · ' + n + ' pertanyaan' : ''; }
   function presetLabel(p) {
-    var title = String(p.title || p.name || '');
-    var n = Number(p.question_count);
-    return title + (p.title && p.name && p.title !== p.name ? ' (' + p.name + ')' : '') + (isFinite(n) && p.question_count != null ? ' · ' + n + ' pertanyaan' : '');
+    var title = str(p.title || p.name);
+    return title + (p.title && p.title !== p.name ? ' (' + p.name + ')' : '') + (p.question_count != null ? countLabel(p.question_count) : '');
   }
-  function renderPresetHint() {
-    var p = findPreset(presetName);
-    $('presetHint').textContent = p ? String(p.blurb || '') : (presetsLoaded && !presets.length ? 'Server tidak menyediakan preset.' : '');
+
+  /* model <-> schema */
+  function blankQ(type) {
+    return { id: '', type: type || 'choice', instructions: '', choice: [{ k: '', d: '' }, { k: '', d: '' }], noulDesc: false, nf: '', nt: '', score: ['', '', ''] };
   }
-  function renderPresets() {
+  function qFromSchema(id, q) {
+    q = q && typeof q === 'object' ? q : {};
+    var type = TYPES.some(function (t) { return t[0] === q.type; }) ? q.type : 'choice';
+    var x = blankQ(type), c = q.criteria;
+    x.id = str(id);
+    x.instructions = str(q.instructions);
+    if (type === 'choice' && c && typeof c === 'object' && !Array.isArray(c)) {
+      x.choice = Object.keys(c).map(function (k) { return { k: k, d: str(c[k]) }; });
+    } else if (type === 'noul' && c && typeof c === 'object' && (str(c['false']) || str(c['true']))) {
+      x.noulDesc = true; x.nf = str(c['false']); x.nt = str(c['true']);
+    } else if (type === 'score' && Array.isArray(c)) {
+      x.score = c.map(str);
+    }
+    return x;
+  }
+  function draftFrom(s, incl) {
+    s = s || {};
+    var ex = s.extra_state && typeof s.extra_state === 'object' ? s.extra_state : {};
+    var qs = s.questions && typeof s.questions === 'object' ? s.questions : {};
+    return {
+      title: str(s.title), description: str(s.description), state_key: str(s.state_key),
+      include_sentiment: incl != null ? !!incl : s.include_sentiment !== false,
+      extra: Object.keys(ex).map(function (k) { return { k: k, v: typeof ex[k] === 'string' ? ex[k] : JSON.stringify(ex[k]) }; }),
+      qs: Object.keys(qs).map(function (id) { return qFromSchema(id, qs[id]); })
+    };
+  }
+  function schemaOf(d) {
+    var extra = {}, questions = {};
+    d.extra.forEach(function (r) { if (r.k.trim()) extra[r.k.trim()] = r.v; });
+    d.qs.forEach(function (q) {
+      var o = { type: q.type, instructions: q.instructions.trim() };
+      if (q.type === 'choice') {
+        o.criteria = {};
+        q.choice.forEach(function (r) { o.criteria[r.k.trim()] = r.d.trim(); });
+      } else if (q.type === 'noul') {
+        if (q.noulDesc) o.criteria = { 'false': q.nf.trim(), 'true': q.nt.trim() };
+      } else {
+        o.criteria = q.score.map(function (s) { return s.trim(); });
+      }
+      questions[q.id.trim()] = o;
+    });
+    return { state_key: d.state_key.trim(), extra_state: extra, include_sentiment: !!d.include_sentiment, questions: questions };
+  }
+  function fullTemplate(d) {
+    var s = schemaOf(d);
+    return { title: d.title.trim(), description: d.description.trim(), state_key: s.state_key, extra_state: s.extra_state, include_sentiment: s.include_sentiment, questions: s.questions };
+  }
+  // Signature includes raw question rows so duplicate ids / empty rows also count as edits.
+  function sigOf(d) { return JSON.stringify([fullTemplate(d), d.qs, d.extra.map(function (r) { return [r.k, r.v]; })]); }
+  function isDirty() { return !!draft && !!cur && sigOf(draft) !== origSig; }
+
+  /* validation (mirrors server rules) */
+  function validate(d) {
+    var e = { title: '', key: '', extra: [], extraAll: '', qs: '', q: [], n: 0 };
+    function bad(msg) { e.n++; return msg; }
+    if (!d) return { ok: false, saveOk: false, e: e };
+    var sk = d.state_key.trim();
+    if (!sk) e.key = bad('state_key wajib diisi.');
+    else if (sk.length > 64) e.key = bad('Maksimal 64 karakter.');
+    var seen = {};
+    d.extra.forEach(function (r, i) {
+      var k = r.k.trim(), m = '';
+      if (!k) m = 'Nama field wajib diisi.';
+      else if (k.length > 64) m = 'Nama field maksimal 64 karakter.';
+      else if (seen[k]) m = 'Nama field "' + k + '" duplikat.';
+      else if (k === sk) m = 'Field "' + k + '" sama dengan state_key (akan diisi teks input).';
+      else if (r.v.length > 10000) m = 'Nilai "' + k + '" maksimal 10000 karakter.';
+      seen[k] = true;
+      e.extra[i] = m ? bad(m) : '';
+    });
+    if (d.extra.length > 32) e.extraAll = bad('Maksimal 32 field.');
+    if (d.qs.length < 1) e.qs = bad('Tambahkan minimal satu pertanyaan.');
+    else if (d.qs.length > MAX_QS) e.qs = bad('Maksimal ' + MAX_QS + ' pertanyaan.');
+    var ids = {};
+    d.qs.forEach(function (q) { var id = q.id.trim(); ids[id] = (ids[id] || 0) + 1; });
+    d.qs.forEach(function (q, i) {
+      var qe = { id: '', instr: '', opts: '', rows: [] }, id = q.id.trim();
+      if (!id) qe.id = 'ID wajib diisi.';
+      else if (!QID_RE.test(id)) qe.id = 'Gunakan huruf, angka, dan _ (diawali huruf/_), maks. 64 karakter.';
+      else if (ids[id] > 1) qe.id = 'ID "' + id + '" duplikat.';
+      else if (id === 'sentiment' && d.include_sentiment) qe.id = 'ID "sentiment" bentrok dengan sentimen bawaan. Ganti ID atau matikan "Sertakan sentimen".';
+      if (!q.instructions.trim()) qe.instr = 'Instruksi wajib diisi.';
+      else if (q.instructions.trim().length > MAX_TXT) qe.instr = 'Maksimal ' + MAX_TXT + ' karakter.';
+      if (q.type === 'choice') {
+        var ks = {};
+        q.choice.forEach(function (r, j) {
+          var k = r.k.trim(), m = '';
+          if (!k) m = 'Label opsi wajib diisi.';
+          else if (k.length > 64) m = 'Label opsi maksimal 64 karakter.';
+          else if (ks[k]) m = 'Label "' + k + '" duplikat.';
+          else if (r.d.trim().length > MAX_TXT) m = 'Deskripsi maksimal ' + MAX_TXT + ' karakter.';
+          ks[k] = true;
+          qe.rows[j] = !!m;
+          if (m && !qe.opts) qe.opts = m;
+        });
+        if (q.choice.length < 2 || q.choice.length > MAX_OPTS) qe.opts = 'Butuh 2 sampai ' + MAX_OPTS + ' opsi.';
+      } else if (q.type === 'noul') {
+        if (q.noulDesc) {
+          qe.rows = [!q.nf.trim(), !q.nt.trim()];
+          if (qe.rows[0] || qe.rows[1]) qe.opts = 'Isi kedua deskripsi false dan true, atau matikan deskripsi.';
+        }
+      } else {
+        q.score.forEach(function (s, j) {
+          qe.rows[j] = !s.trim() || s.trim().length > MAX_TXT;
+          if (qe.rows[j] && !qe.opts) qe.opts = 'Level ' + j + (s.trim() ? ' maksimal ' + MAX_TXT + ' karakter.' : ' tidak boleh kosong.');
+        });
+        if (q.score.length < 2 || q.score.length > MAX_OPTS) qe.opts = 'Butuh 2 sampai ' + MAX_OPTS + ' level.';
+      }
+      ['id', 'instr', 'opts'].forEach(function (f) { if (qe[f]) e.n++; });
+      e.q[i] = qe;
+    });
+    var t = d.title.trim();
+    if (!t) e.title = 'Judul wajib diisi untuk menyimpan.';
+    else if (t.length > 120) e.title = 'Maksimal 120 karakter.';
+    return { ok: e.n === 0, saveOk: e.n === 0 && !e.title, e: e };
+  }
+
+  /* catalog */
+  function renderCatalog() {
     var sel = $('presetSel');
     sel.textContent = '';
-    if (!presets.length) {
-      sel.appendChild(el('option', { value: '', text: presetsLoaded ? 'Tidak ada preset' : 'Memuat preset…' }));
+    if (!presetsLoaded) {
+      sel.appendChild(el('option', { value: '', text: 'Memuat…' }));
       sel.disabled = true;
-    } else {
-      presets.forEach(function (p) { sel.appendChild(el('option', { value: String(p.name), text: presetLabel(p) })); });
-      if (!findPreset(presetName)) presetName = String(presets[0].name);
-      sel.value = presetName;
-      sel.disabled = false;
+      renderHint();
+      updateControls();
+      return;
     }
-    renderPresetHint();
+    sel.appendChild(el('option', { value: 'new', text: '+ Template baru (kosong)' }));
+    if (templates.length) {
+      var gt = el('optgroup', { label: 'Template tersimpan' });
+      templates.forEach(function (t) {
+        gt.appendChild(el('option', { value: 't:' + t.id, text: str(t.title || t.id) + (t.builtin ? ' · bawaan' : '') + countLabel(t.question_count) }));
+      });
+      sel.appendChild(gt);
+    }
+    if (presets.length) {
+      var gp = el('optgroup', { label: 'Preset Laya' });
+      presets.forEach(function (p) { gp.appendChild(el('option', { value: 'p:' + p.name, text: presetLabel(p) })); });
+      sel.appendChild(gp);
+    }
+    if (!keyExists(selKey)) {
+      selKey = templates.length ? 't:' + templates[0].id : presets.length ? 'p:' + presets[0].name : 'new';
+    }
+    sel.value = selKey;
+    sel.disabled = false;
+    if (!cur || cur.key !== selKey) loadItem(selKey);
+    renderHint();
     updateControls();
+  }
+  function renderHint() {
+    var h = '';
+    if (itemErr) h = itemErr;
+    else if (cur && cur.kind === 'p') { var p = findPreset(cur.id); h = p ? str(p.blurb) : ''; }
+    else if (cur && cur.kind === 't') { var t = findTemplate(cur.id); h = t ? str(t.description) : ''; }
+    else if (cur && cur.kind === 'new') h = 'Template kosong — susun pertanyaannya lewat “Atur preset”.';
+    else if (presetsLoaded && !presets.length && !templates.length) h = 'Server tidak menyediakan preset atau template.';
+    $('presetHint').textContent = h;
+  }
+  function getJson(url) {
+    return fetch(url, { cache: 'no-store' }).then(function (res) {
+      if (res.status === 503) throw { retry: true };
+      if (!res.ok) return errorFrom(res).then(function (m) { throw new Error(m); });
+      return res.json();
+    });
+  }
+  function loadTemplates() {
+    return getJson('/api/templates').then(function (list) {
+      templates = Array.isArray(list) ? list.filter(function (t) { return t && t.id != null; }) : [];
+    });
   }
   function loadPresets() {
     if (presetsBusy) return;
     clearTimeout(presetTimer);
     if (!srv.ready || srv.switching) return; // retried from applyStatus once ready
     presetsBusy = true;
-    var forModel = srv.model;
-    fetch('/api/presets', { cache: 'no-store' })
+    var forModel = srv.model, failed = '';
+    Promise.all([
+      getJson('/api/presets').then(function (list) {
+        presets = Array.isArray(list) ? list.filter(function (p) { return p && p.name != null; }) : [];
+      }).catch(function (e) { presets = []; if (e && e.retry) throw e; failed = 'preset: ' + ((e && e.message) || 'kesalahan jaringan'); }),
+      loadTemplates().catch(function (e) { templates = []; failed = (failed ? failed + '; ' : '') + 'template: ' + ((e && e.message) || 'kesalahan jaringan'); })
+    ])
+      .then(function () {
+        presetsLoaded = true;
+        presetsModel = forModel;
+        renderCatalog();
+        if (failed) {
+          $('presetHint').textContent = 'Gagal memuat ' + failed;
+          presetTimer = setTimeout(function () { presetsModel = null; presetsBusy = false; loadPresets(); }, 5000);
+        }
+      })
+      .catch(function () { presetTimer = setTimeout(function () { loadPresets(); }, 1500); })
+      .then(function () { presetsBusy = false; });
+  }
+  function refreshTemplates(selectKey) {
+    return loadTemplates().catch(function () { /* keep the old list */ }).then(function () {
+      if (selectKey) selKey = selectKey;
+      renderCatalog();
+    });
+  }
+
+  function setItem(key, kind, id, builtin, d) {
+    cur = { key: key, kind: kind, id: id, builtin: !!builtin };
+    draft = d;
+    origDraft = clone(d);
+    origSig = sigOf(d);
+    itemErr = '';
+  }
+  function loadItem(key) {
+    var token = ++itemToken;
+    itemErr = '';
+    showEdMsg('');
+    $('edOut').hidden = true;
+    if (key === 'new') {
+      var d = draftFrom({ state_key: 'text', include_sentiment: includeSentiment, questions: {} });
+      d.qs.push(blankQ('choice'));
+      setItem('new', 'new', null, false, d);
+      itemBusy = false;
+      buildEditor();
+      return;
+    }
+    var isT = key.indexOf('t:') === 0, id = key.slice(2);
+    itemBusy = true;
+    cur = { key: key, kind: isT ? 't' : 'p', id: id, builtin: isT ? !!(findTemplate(id) || {}).builtin : true };
+    draft = null;
+    buildEditor();
+    getJson((isT ? '/api/templates/' : '/api/presets/') + encodeURIComponent(id))
+      .then(function (o) {
+        if (token !== itemToken) return;
+        var dd;
+        if (isT) dd = draftFrom(o);
+        else {
+          // Laya preset: the example state minus state_key becomes the extra state fields.
+          var st = o && o.state && typeof o.state === 'object' ? clone(o.state) : {};
+          delete st[o.state_key];
+          // Example values are shown as placeholders only, so they are not sent with every text.
+          dd = draftFrom({ title: o.title || o.name, description: o.blurb, state_key: o.state_key, extra_state: st, questions: o.questions }, includeSentiment);
+          dd.extra.forEach(function (r) { r.ph = r.v; r.v = ''; });
+        }
+        setItem(key, isT ? 't' : 'p', id, isT ? o.builtin === true : true, dd);
+        itemBusy = false;
+        buildEditor();
+      })
+      .catch(function (e) {
+        if (token !== itemToken) return;
+        if (e && e.retry) { setTimeout(function () { if (token === itemToken) loadItem(key); }, 1500); return; }
+        itemBusy = false;
+        itemErr = 'Gagal memuat: ' + ((e && e.message) || 'kesalahan jaringan');
+        buildEditor();
+      });
+  }
+
+  /* editor DOM */
+  function input(val, cls, ph, label, onInput) {
+    var i = el('input', { type: 'text', class: cls || '', placeholder: ph || '', 'aria-label': label, autocomplete: 'off', spellcheck: 'false' });
+    i.value = val;
+    i.addEventListener('input', function () { onInput(i.value); refresh(); });
+    return i;
+  }
+  function rmBtn(label, disabled, onClick) {
+    var b = el('button', { type: 'button', class: 'remove', title: label, 'aria-label': label, text: '×' });
+    b.disabled = !!disabled;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+  function buildExtra() {
+    var box = $('edExtra');
+    box.textContent = '';
+    extraRefs = [];
+    draft.extra.forEach(function (r, i) {
+      var k = input(r.k, 'mono k', 'nama field', 'Nama field ' + (i + 1), function (v) { r.k = v; });
+      var v = input(r.v, 'd', r.ph ? 'mis. ' + r.ph : 'nilai', 'Nilai field ' + (i + 1), function (v2) { r.v = v2; });
+      extraRefs.push(k);
+      box.appendChild(el('div', { class: 'op-row ch' }, [k, v, rmBtn('Hapus field', false, function () {
+        draft.extra.splice(i, 1); buildExtra(); refresh();
+      })]));
+    });
+  }
+  function buildQs(focusIdx) {
+    var box = $('edQs');
+    box.textContent = '';
+    qRefs = [];
+    draft.qs.forEach(function (q, i) {
+      var ref = { rows: [] };
+      var idIn = input(q.id, 'mono', 'id_pertanyaan', 'ID pertanyaan ' + (i + 1), function (v) { q.id = v; });
+      var tSel = el('select', { 'aria-label': 'Tipe pertanyaan ' + (i + 1) });
+      TYPES.forEach(function (t) { tSel.appendChild(el('option', { value: t[0], text: t[1] })); });
+      tSel.value = q.type;
+      tSel.addEventListener('change', function () { q.type = tSel.value; buildQs(); refresh(); });
+      var up = el('button', { type: 'button', class: 'icon', title: 'Naikkan', 'aria-label': 'Naikkan pertanyaan ' + (i + 1), text: '↑' });
+      var dn = el('button', { type: 'button', class: 'icon', title: 'Turunkan', 'aria-label': 'Turunkan pertanyaan ' + (i + 1), text: '↓' });
+      var del = el('button', { type: 'button', class: 'icon danger', text: 'Hapus', 'aria-label': 'Hapus pertanyaan ' + (i + 1) });
+      up.disabled = i === 0;
+      dn.disabled = i === draft.qs.length - 1;
+      up.addEventListener('click', function () { draft.qs.splice(i - 1, 0, draft.qs.splice(i, 1)[0]); buildQs(); refresh(); });
+      dn.addEventListener('click', function () { draft.qs.splice(i + 1, 0, draft.qs.splice(i, 1)[0]); buildQs(); refresh(); });
+      del.addEventListener('click', function () { draft.qs.splice(i, 1); buildQs(); refresh(); });
+      ref.id = idIn;
+      ref.idErr = el('span', { class: 'ferr' });
+      var instrId = 'qi' + i;
+      var instr = el('textarea', { id: instrId, rows: '2', placeholder: 'Pertanyaan untuk model, mis. “Tim mana yang harus menangani email di `body`?”' });
+      instr.value = q.instructions;
+      instr.addEventListener('input', function () { q.instructions = instr.value; refresh(); });
+      ref.instr = instr;
+      ref.instrErr = el('span', { class: 'ferr' });
+      var ops = el('div', { class: 'ops' }), sub, addBtn = null, toggle = null;
+      if (q.type === 'choice') {
+        sub = 'Opsi (label + deskripsi)';
+        q.choice.forEach(function (r, j) {
+          var k = input(r.k, 'k', 'label', 'Label opsi ' + (j + 1), function (v) { r.k = v; });
+          var d = input(r.d, 'd', 'deskripsi (opsional)', 'Deskripsi opsi ' + (j + 1), function (v) { r.d = v; });
+          ref.rows.push([k]);
+          ops.appendChild(el('div', { class: 'op-row ch' }, [k, d, rmBtn('Hapus opsi', q.choice.length <= 2, function () {
+            q.choice.splice(j, 1); buildQs(); refresh();
+          })]));
+        });
+      } else if (q.type === 'noul') {
+        sub = 'Jawaban ya/tidak (false/true)';
+        var cb = el('input', { type: 'checkbox' });
+        cb.checked = q.noulDesc;
+        cb.addEventListener('change', function () { q.noulDesc = cb.checked; buildQs(); refresh(); });
+        toggle = el('label', { class: 'check' }, [cb, document.createTextNode('Pakai deskripsi false/true')]);
+        if (q.noulDesc) {
+          var f = input(q.nf, '', 'arti jawaban false (tidak)', 'Deskripsi false', function (v) { q.nf = v; });
+          var t = input(q.nt, '', 'arti jawaban true (ya)', 'Deskripsi true', function (v) { q.nt = v; });
+          ref.rows.push([f], [t]);
+          ops.appendChild(el('div', { class: 'op-row nl' }, [el('span', { class: 'op-tag', text: 'false' }), f]));
+          ops.appendChild(el('div', { class: 'op-row nl' }, [el('span', { class: 'op-tag', text: 'true' }), t]));
+        }
+      } else {
+        sub = 'Level (0 = terendah)';
+        q.score.forEach(function (s, j) {
+          var lv = input(s, '', 'deskripsi level ' + j, 'Level ' + j, function (v) { q.score[j] = v; });
+          ref.rows.push([lv]);
+          ops.appendChild(el('div', { class: 'op-row lv' }, [el('span', { class: 'op-tag', text: String(j) }), lv, rmBtn('Hapus level', q.score.length <= 2, function () {
+            q.score.splice(j, 1); buildQs(); refresh();
+          })]));
+        });
+      }
+      if (q.type !== 'noul') {
+        var list = q.type === 'choice' ? q.choice : q.score;
+        addBtn = el('button', { type: 'button', class: 'small', text: '+ Opsi / level' });
+        addBtn.disabled = list.length >= MAX_OPTS;
+        addBtn.addEventListener('click', function () {
+          if (q.type === 'choice') q.choice.push({ k: '', d: '' }); else q.score.push('');
+          buildQs(); refresh();
+          var rows = qRefs[i] && qRefs[i].rows;
+          if (rows && rows.length) rows[rows.length - 1][0].focus();
+        });
+      }
+      ref.optsErr = el('span', { class: 'ferr' });
+      box.appendChild(el('div', { class: 'qcard' }, [
+        el('div', { class: 'qc-head' }, [el('span', { class: 'qc-no', text: '#' + (i + 1) }), idIn, tSel, el('span', { class: 'qc-tools' }, [up, dn, del])]),
+        ref.idErr,
+        el('div', { class: 'f' }, [el('label', { for: instrId, text: 'Instruksi' }), instr, ref.instrErr]),
+        el('span', { class: 'qc-sub', text: sub }),
+        toggle, q.type === 'noul' && !q.noulDesc ? null : ops, ref.optsErr,
+        addBtn ? el('div', null, [addBtn]) : null
+      ]));
+      qRefs.push(ref);
+    });
+    if (focusIdx != null && qRefs[focusIdx]) qRefs[focusIdx].id.focus();
+  }
+  function buildEditor() {
+    var show = !!draft;
+    $('edBody').hidden = !show;
+    $('edState').textContent = show ? '' : (itemBusy ? 'Memuat…' : itemErr);
+    $('edState').hidden = show || !$('edState').textContent;
+    if (show) {
+      $('edTitle').value = draft.title;
+      $('edDesc').value = draft.description;
+      $('edKey').value = draft.state_key;
+      $('edIncl').checked = draft.include_sentiment;
+      $('inclSent').checked = draft.include_sentiment;
+      includeSentiment = draft.include_sentiment;
+      buildExtra();
+      buildQs();
+      setTab('B', true);
+      $('edSrc').textContent = cur.kind === 'p' ? 'dari preset Laya “' + cur.id + '”'
+        : cur.kind === 't' ? (cur.builtin ? 'template bawaan' : 'template “' + cur.id + '”') : 'template baru';
+      $('edDel').hidden = !(cur.kind === 't' && !cur.builtin);
+    } else {
+      $('edSrc').textContent = '';
+    }
+    refresh();
+  }
+  function setErr(id, msg) { $(id).textContent = msg || ''; }
+  function mark(node, bad) { if (node) node.classList.toggle('invalid', !!bad); }
+  // Re-validate and sync errors, dirty flags and buttons (no DOM rebuild, so focus is kept).
+  function refresh() {
+    var v = validate(draft), e = v.e, dirty = isDirty();
+    if (draft) {
+      setErr('errTitle', e.title); mark($('edTitle'), e.title);
+      setErr('errKey', e.key); mark($('edKey'), e.key);
+      setErr('errExtra', e.extraAll || e.extra.filter(Boolean)[0] || '');
+      extraRefs.forEach(function (k, i) { mark(k, e.extra[i]); });
+      setErr('errQs', e.qs);
+      qRefs.forEach(function (r, i) {
+        var qe = e.q[i] || { rows: [] };
+        r.idErr.textContent = qe.id; mark(r.id, qe.id);
+        r.instrErr.textContent = qe.instr; mark(r.instr, qe.instr);
+        r.optsErr.textContent = qe.opts;
+        r.rows.forEach(function (row, j) { row.forEach(function (n) { mark(n, qe.rows[j]); }); });
+      });
+      var sk = draft.state_key.trim() || 'state_key';
+      $('edKeyHint').textContent = 'Setiap teks input masuk ke field “' + sk + '”. Field tambahan di sini (mis. from, subject) dikirim sama untuk setiap teks.';
+      $('edAddQ').disabled = draft.qs.length >= MAX_QS;
+    }
+    $('dirtyEd').hidden = $('dirtyMain').hidden = !dirty;
+    $('edRun').disabled = edBusy || !v.ok || !canAnalyze();
+    $('edRun').title = !v.ok ? 'Perbaiki isian yang ditandai merah' : (!canAnalyze() ? 'Model belum siap' : '');
+    $('edSave').disabled = edBusy || !v.saveOk;
+    $('edSave').title = v.saveOk ? '' : 'Perbaiki isian yang ditandai merah';
+    $('edCopy').disabled = $('edReset').disabled = !draft;
+    $('edDel').disabled = edBusy;
+    renderHint();
+    updateControls();
+    updateStale();
+  }
+
+  function metaInput(id, field) {
+    $(id).addEventListener('input', function () { if (draft) { draft[field] = $(id).value; refresh(); } });
+  }
+  metaInput('edTitle', 'title');
+  metaInput('edDesc', 'description');
+  metaInput('edKey', 'state_key');
+  function setIncl(on) {
+    includeSentiment = on;
+    try { window.localStorage.setItem(INCL_KEY, on ? '1' : '0'); } catch (e) { /* ignore */ }
+    $('inclSent').checked = on;
+    $('edIncl').checked = on;
+    if (draft) {
+      draft.include_sentiment = on;
+      // For a Laya preset, include_sentiment is a run option, not an edit of the preset.
+      if (cur.kind === 'p') { origDraft.include_sentiment = on; origSig = sigOf(origDraft); }
+      if (!$('paneJ').hidden) fillJson();
+    }
+    refresh();
+  }
+  $('inclSent').addEventListener('change', function () { setIncl($('inclSent').checked); });
+  $('edIncl').addEventListener('change', function () { setIncl($('edIncl').checked); });
+  $('edAddExtra').addEventListener('click', function () {
+    if (!draft) return;
+    draft.extra.push({ k: '', v: '' });
+    buildExtra(); refresh();
+    extraRefs[extraRefs.length - 1].focus();
+  });
+  $('edAddQ').addEventListener('click', function () {
+    if (!draft || draft.qs.length >= MAX_QS) return;
+    draft.qs.push(blankQ('choice'));
+    buildQs(draft.qs.length - 1); refresh();
+  });
+
+  /* tabs + raw JSON */
+  function jsonText() { return JSON.stringify(schemaOf(draft), null, 2); }
+  function fillJson() { jsonSnap = jsonText(); $('edJson').value = jsonSnap; setErr('errJson', ''); }
+  function setTab(t, silent) {
+    var j = t === 'J';
+    $('tabB').setAttribute('aria-selected', String(!j));
+    $('tabJ').setAttribute('aria-selected', String(j));
+    $('paneB').hidden = j;
+    $('paneJ').hidden = !j;
+    if (j && draft) fillJson();
+    if (!silent) (j ? $('tabJ') : $('tabB')).focus();
+  }
+  function applyJson() {
+    var o;
+    try { o = JSON.parse($('edJson').value); } catch (e) { setErr('errJson', 'JSON tidak valid: ' + e.message); return false; }
+    if (!o || typeof o !== 'object' || Array.isArray(o)) { setErr('errJson', 'JSON harus berupa objek.'); return false; }
+    if (!o.questions || typeof o.questions !== 'object' || Array.isArray(o.questions)) { setErr('errJson', '"questions" harus berupa objek {id: pertanyaan}.'); return false; }
+    if (o.extra_state != null && (typeof o.extra_state !== 'object' || Array.isArray(o.extra_state))) { setErr('errJson', '"extra_state" harus berupa objek {nama: nilai}.'); return false; }
+    var badT = Object.keys(o.questions).filter(function (id) {
+      var q = o.questions[id];
+      return !q || typeof q !== 'object' || !TYPES.some(function (t) { return t[0] === q.type; });
+    });
+    if (badT.length) { setErr('errJson', 'Pertanyaan "' + badT[0] + '": "type" harus choice, noul, atau score.'); return false; }
+    draft = draftFrom({ title: draft.title, description: draft.description, state_key: o.state_key, extra_state: o.extra_state, include_sentiment: o.include_sentiment, questions: o.questions });
+    includeSentiment = draft.include_sentiment;
+    $('edKey').value = draft.state_key;
+    $('edIncl').checked = $('inclSent').checked = draft.include_sentiment;
+    buildExtra(); buildQs();
+    jsonSnap = $('edJson').value;
+    var v = validate(draft), first = v.e.key || v.e.extraAll || v.e.extra.filter(Boolean)[0] || v.e.qs || '';
+    if (!first) v.e.q.some(function (qe, i) {
+      var m = qe.id || qe.instr || qe.opts;
+      if (m) first = 'Pertanyaan #' + (i + 1) + ' (' + (draft.qs[i].id || 'tanpa ID') + '): ' + m;
+      return !!m;
+    });
+    setErr('errJson', first ? 'Diterapkan, tetapi masih ada kesalahan: ' + first : '');
+    showEdMsg(first ? '' : 'JSON diterapkan ke builder.', 'ok');
+    refresh();
+    return true;
+  }
+  $('tabB').addEventListener('click', function () {
+    if (!draft || !$('paneB').hidden) return;
+    if ($('edJson').value !== jsonSnap && !applyJson()) return; // stay on JSON and show the error
+    setTab('B');
+  });
+  $('tabJ').addEventListener('click', function () { if (draft && $('paneJ').hidden) setTab('J'); });
+  $('edApplyJson').addEventListener('click', function () { if (draft) applyJson(); });
+
+  /* editor actions */
+  function showEdMsg(msg, kind) {
+    var m = $('edMsg');
+    m.textContent = msg || '';
+    m.className = 'edmsg ' + (kind || 'info');
+    m.hidden = !msg;
+  }
+  // Template object sent with mode "custom" (current edits, saved or not).
+  function runTemplate() {
+    var t = fullTemplate(draft);
+    if (cur.kind === 't' && !isDirty()) t.id = cur.id;
+    if (!t.title) t.title = 'Template kustom';
+    return t;
+  }
+  function tokensOf(data) {
+    var u = data && (data.usage || (data.results && data.results[0] && data.results[0].usage));
+    if (!u || typeof u !== 'object') return null;
+    var n = u.total_tokens != null ? u.total_tokens : u.tokens != null ? u.tokens : u.prompt_tokens;
+    return isNum(n) ? Number(n) : null;
+  }
+  function runTest() {
+    if (edBusy || !draft) return;
+    if (!validate(draft).ok) { showEdMsg('Perbaiki isian yang ditandai merah terlebih dahulu.', 'err'); return; }
+    var text = $('edTest').value.trim();
+    if (!text) { showEdMsg('Isi teks uji terlebih dahulu.', 'err'); $('edTest').focus(); return; }
+    edBusy = true; $('edSpin').hidden = false; showEdMsg(''); refresh();
+    fetch('/api/score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texts: [text], mode: 'custom', template: runTemplate() }) })
       .then(function (res) {
-        if (res.status === 503) throw { retry: true };
         if (!res.ok) return errorFrom(res).then(function (m) { throw new Error(m); });
         return res.json();
       })
-      .then(function (list) {
-        presets = Array.isArray(list) ? list.filter(function (p) { return p && p.name != null; }) : [];
-        presetsLoaded = true;
-        presetsModel = forModel;
-        renderPresets();
-      })
-      .catch(function (e) {
-        if (!e || !e.retry) {
-          presetsLoaded = true;
-          presets = [];
-          renderPresets();
-          $('presetHint').textContent = 'Gagal memuat preset: ' + ((e && e.message) || 'kesalahan jaringan');
+      .then(function (data) {
+        var r = data && Array.isArray(data.results) ? data.results[0] : null;
+        if (!r) throw new Error('Respons server tidak valid.');
+        var tk = tokensOf(data);
+        $('edOutMeta').textContent = [data.model || srv.model || 'model ?', tk != null ? tk + ' token' : null,
+          (data.latency_ms != null ? Math.round(num(data.latency_ms)) : '–') + ' ms'].filter(Boolean).join(' · ');
+        var body = $('edOutBody');
+        body.textContent = '';
+        if (r.label != null) {
+          body.appendChild(el('div', { class: 'row', style: 'margin-bottom:8px' }, [badge(r.label),
+            isNum(r.score) ? el('span', { class: 'hint', text: 'skor ' + signed(r.score) }) : null]));
         }
-        presetTimer = setTimeout(function () { presetsLoaded = false; loadPresets(); }, e && e.retry ? 1500 : 5000);
+        body.appendChild(qblocks(r, 'preset', true));
+        $('edOut').hidden = false;
       })
-      .then(function () { presetsBusy = false; });
+      .catch(function (e) { showEdMsg('Uji gagal: ' + ((e && e.message) || 'kesalahan jaringan'), 'err'); })
+      .then(function () { edBusy = false; $('edSpin').hidden = true; refresh(); });
   }
+  $('edRun').addEventListener('click', runTest);
+
+  $('edSave').addEventListener('click', function () {
+    if (edBusy || !draft) return;
+    if (!validate(draft).saveOk) { showEdMsg('Perbaiki isian yang ditandai merah terlebih dahulu.', 'err'); return; }
+    var body = fullTemplate(draft);
+    if (cur.kind === 't' && !cur.builtin) body.id = cur.id;
+    else if (cur.kind !== 'new') {
+      var what = cur.kind === 'p' ? 'Preset Laya' : 'Template bawaan';
+      var t = window.prompt(what + ' tidak bisa ditimpa. Simpan sebagai template baru dengan judul:', body.title + ' (salinan)');
+      if (t == null) return;
+      t = t.trim();
+      if (!t || t.length > 120) { showEdMsg('Judul wajib diisi, maksimal 120 karakter.', 'err'); return; }
+      body.title = t;
+    }
+    edBusy = true; showEdMsg('Menyimpan…'); refresh();
+    fetch('/api/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (res) {
+        if (!res.ok) return errorFrom(res).then(function (m) { throw new Error(m); });
+        return res.json();
+      })
+      .then(function (saved) {
+        if (!saved || saved.id == null) throw new Error('Respons server tidak valid.');
+        var key = 't:' + saved.id;
+        itemToken++;
+        setItem(key, 't', String(saved.id), saved.builtin === true, draftFrom(saved));
+        selKey = key;
+        try { window.localStorage.setItem(PRESET_KEY, key); } catch (e) { /* ignore */ }
+        edBusy = false;
+        buildEditor();
+        showEdMsg('Template “' + str(saved.title) + '” tersimpan.', 'ok');
+        return refreshTemplates(key);
+      })
+      .catch(function (e) { showEdMsg('Gagal menyimpan: ' + ((e && e.message) || 'kesalahan jaringan'), 'err'); })
+      .then(function () { edBusy = false; refresh(); });
+  });
+
+  $('edDel').addEventListener('click', function () {
+    if (edBusy || !cur || cur.kind !== 't' || cur.builtin) return;
+    var t = findTemplate(cur.id), name = (t && t.title) || cur.id;
+    if (!window.confirm('Hapus template “' + name + '”? Tindakan ini tidak bisa dibatalkan.')) return;
+    edBusy = true; refresh();
+    fetch('/api/templates/' + encodeURIComponent(cur.id), { method: 'DELETE' })
+      .then(function (res) {
+        if (!res.ok && res.status !== 404) return errorFrom(res).then(function (m) { throw new Error(m); });
+      })
+      .then(function () {
+        cur = null; draft = null; selKey = '';
+        try { window.localStorage.removeItem(PRESET_KEY); } catch (e) { /* ignore */ }
+        edBusy = false;
+        return refreshTemplates().then(function () { showEdMsg('Template “' + name + '” dihapus.', 'ok'); });
+      })
+      .catch(function (e) { showEdMsg('Gagal menghapus: ' + ((e && e.message) || 'kesalahan jaringan'), 'err'); })
+      .then(function () { edBusy = false; refresh(); });
+  });
+
+  $('edReset').addEventListener('click', function () {
+    if (!draft) return;
+    if (isDirty() && !window.confirm('Buang semua perubahan dan kembalikan ke versi asli?')) return;
+    draft = clone(origDraft);
+    includeSentiment = draft.include_sentiment;
+    buildEditor();
+    showEdMsg('Dikembalikan ke versi asli.', 'info');
+  });
+
+  function copyText(t) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t);
+    return new Promise(function (ok, fail) {
+      var ta = el('textarea', { readonly: '', style: 'position:fixed;left:-9999px;top:0' });
+      ta.value = t;
+      document.body.appendChild(ta);
+      ta.select();
+      var done = false;
+      try { done = document.execCommand('copy'); } catch (e) { /* ignore */ }
+      ta.remove();
+      if (done) ok(); else fail(new Error('clipboard tidak tersedia'));
+    });
+  }
+  $('edCopy').addEventListener('click', function () {
+    if (!draft) return;
+    copyText(jsonText()).then(function () { showEdMsg('Skema JSON disalin ke clipboard.', 'ok'); },
+      function () { setTab('J'); showEdMsg('Tidak bisa menyalin otomatis — salin dari tab Raw JSON.', 'err'); });
+  });
+
   $('presetSel').addEventListener('change', function () {
-    presetName = $('presetSel').value;
-    try { window.localStorage.setItem(PRESET_KEY, presetName); } catch (e) { /* ignore */ }
-    renderPresetHint();
-    updateStale();
+    var v = $('presetSel').value;
+    if (!v || v === selKey) return;
+    if (isDirty() && !window.confirm('Perubahan yang belum disimpan akan hilang. Lanjutkan?')) { $('presetSel').value = selKey; return; }
+    selKey = v;
+    try { window.localStorage.setItem(PRESET_KEY, v); } catch (e) { /* ignore */ }
+    loadItem(v);
+    if (v === 'new') openEditor(true);
   });
-  $('inclSent').addEventListener('change', function () {
-    includeSentiment = $('inclSent').checked;
-    try { window.localStorage.setItem(INCL_KEY, includeSentiment ? '1' : '0'); } catch (e) { /* ignore */ }
-    updateStale();
-  });
+  function openEditor(on) {
+    $('editor').hidden = !on;
+    $('btnEditor').setAttribute('aria-expanded', String(on));
+    $('btnEditor').textContent = on ? 'Tutup editor' : 'Atur preset';
+    if (on && !$('edTest').value.trim()) {
+      var first = textValues().map(function (s) { return s.trim(); }).filter(Boolean)[0];
+      if (first) $('edTest').value = first;
+    }
+  }
+  $('btnEditor').addEventListener('click', function () { openEditor($('editor').hidden); });
 
   /* ---------- Status & model picker ---------- */
   var statusTimer = null;
@@ -448,7 +1187,7 @@
     renderModels(s);
     // Presets depend on the loaded model: (re)load once ready or after a switch.
     if (srv.ready && !srv.switching && (!presetsLoaded || presetsModel !== srv.model) && !presetsBusy) {
-      if (presetsModel !== srv.model) { presetsLoaded = false; presets = []; renderPresets(); }
+      if (presetsModel !== srv.model) { presetsLoaded = false; presets = []; renderCatalog(); }
       loadPresets();
     }
     updateControls();
@@ -564,9 +1303,9 @@
   function canAnalyze() { return srv.ready && !srv.switching; }
   function updateControls() {
     var ok = canAnalyze();
-    var needPreset = mode === 'preset' && !findPreset(presetName);
+    var needPreset = mode === 'preset' && !setReady();
     $('btnAnalyze').disabled = busy || !ok || needPreset;
-    $('btnAnalyze').title = ok ? (needPreset ? 'Pilih preset terlebih dahulu' : '') : (srv.switching ? 'Model sedang diganti' : 'Model belum siap');
+    $('btnAnalyze').title = ok ? (needPreset ? (draft ? 'Perbaiki isian preset/template (Atur preset)' : 'Pilih preset atau template terlebih dahulu') : '') : (srv.switching ? 'Model sedang diganti' : 'Model belum siap');
     $('stModelSel').disabled = busy || srv.switching || !srv.ready;
     $('btnExport').disabled = busy || !lastResponse;
   }
@@ -587,14 +1326,30 @@
       return msg ? String(msg).slice(0, 500) : ('Permintaan gagal (HTTP ' + res.status + ').');
     });
   }
+  // The selected preset/template is usable once loaded and valid.
+  function setReady() { return !!draft && !itemBusy && validate(draft).ok; }
+  // Preset / Template: an unedited Laya preset runs as mode "preset" (+ extra_state); anything
+  // else (templates, edited presets, new templates) runs as mode "custom" with the current draft.
   function requestBody(texts) {
     var b = { texts: texts, mode: mode };
-    if (mode === 'preset') { b.preset = presetName; b.include_sentiment = includeSentiment; }
+    if (mode !== 'preset') return b;
+    if (!draft || !cur) { b.preset = ''; return b; }
+    var s = schemaOf(draft);
+    var o = schemaOf(origDraft);
+    if (cur.kind === 'p' && s.state_key === o.state_key && JSON.stringify(s.questions) === JSON.stringify(o.questions)) {
+      b.preset = cur.id;
+      b.include_sentiment = s.include_sentiment;
+      b.extra_state = s.extra_state;
+    } else {
+      b.mode = 'custom';
+      b.template = runTemplate();
+    }
     return b;
   }
+  function reqSig(b) { var c = {}; for (var k in b) if (k !== 'texts') c[k] = b[k]; return JSON.stringify(c); }
   function analyze() {
     if (busy || !canAnalyze()) return;
-    if (mode === 'preset' && !findPreset(presetName)) { showError('Pilih preset terlebih dahulu.'); return; }
+    if (mode === 'preset' && !setReady()) { showError(draft ? 'Preset/template belum valid — perbaiki lewat “Atur preset”.' : 'Pilih preset atau template terlebih dahulu.'); return; }
     var texts = textValues().map(function (s) { return s.trim(); }).filter(Boolean);
     if (!texts.length) { showError('Isi minimal satu teks terlebih dahulu.'); return; }
     showError('');
@@ -608,7 +1363,7 @@
       .then(function (data) {
         if (!data || !Array.isArray(data.results)) throw new Error('Respons server tidak valid.');
         lastResponse = data;
-        lastReq = { mode: req.mode, preset: req.preset, include_sentiment: req.include_sentiment };
+        lastReq = { sig: reqSig(req), title: reqTitle(req, data) };
         render(data);
       })
       .catch(function (e) { showError((e && e.message) || 'Terjadi kesalahan jaringan.'); })
@@ -728,6 +1483,8 @@
     return el('div', { class: 'dec' + (small ? ' sm' : '') }, kids);
   }
   function isMany(d, m) { return m === 'preset' || questionsOf(d, m).length > 2; }
+  // Result mode for rendering: "custom" renders like "preset".
+  function resMode(m) { return m === 'custom' ? 'preset' : modeOf(m); }
   function qblocks(d, m, small) {
     var qs = questionsOf(d, m);
     var many = isMany(d, m);
@@ -738,12 +1495,13 @@
     return wrap;
   }
   function modeTitle(data) {
-    var m = modeOf(data.mode);
+    var m = resMode(data.mode);
+    if (data.mode === 'custom') return String(data.template_title || data.template_id || 'Template kustom');
     if (m === 'preset') return String(data.preset_title || data.preset || MODES.preset.name);
     return MODES[m].name;
   }
   function render(data) {
-    var m = modeOf(data.mode);
+    var m = resMode(data.mode);
     var avg = data.average || {};
     $('resMeta').textContent = [
       data.model || srv.model || 'model ?',
@@ -790,6 +1548,10 @@
     updateControls();
   }
   function reqTitle(req, resp) {
+    if (req.mode === 'custom') {
+      var tt = (resp && resp.template_title) || (req.template && req.template.title) || 'kustom';
+      return 'template ' + tt + (req.template && req.template.include_sentiment ? ' + sentimen' : ' tanpa sentimen');
+    }
     if (req.mode !== 'preset') return 'mode ' + MODES[modeOf(req.mode)].name;
     var p = findPreset(req.preset);
     var title = (resp && resp.preset === req.preset && resp.preset_title) || (p && p.title) || req.preset || '?';
@@ -800,10 +1562,11 @@
     var box = $('stale');
     if (!lastResponse || !lastReq) { box.hidden = true; box.textContent = ''; return; }
     var notes = [];
-    var cur = requestBody([]);
-    var changed = cur.mode !== lastReq.mode ||
-      (cur.mode === 'preset' && (cur.preset !== lastReq.preset || cur.include_sentiment !== lastReq.include_sentiment));
-    if (changed) notes.push(reqTitle(lastReq, lastResponse) + ' (sekarang: ' + reqTitle(cur, null) + ')');
+    var now = requestBody([]);
+    if (reqSig(now) !== lastReq.sig) {
+      var nowTitle = reqTitle(now, null);
+      notes.push(lastReq.title + (nowTitle !== lastReq.title ? ' (sekarang: ' + nowTitle + ')' : ' (sudah diubah)'));
+    }
     if (lastResponse.model && srv.model && lastResponse.model !== srv.model) notes.push('model ' + lastResponse.model + ' (sekarang: ' + srv.model + ')');
     box.hidden = !notes.length;
     box.textContent = notes.length ? 'Hasil ini dari ' + notes.join(' dan ') + '. Jalankan analisis lagi untuk memperbarui.' : '';

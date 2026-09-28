@@ -1,0 +1,59 @@
+{
+  "id": "keluhan-pelanggan",
+  "title": "Keluhan pelanggan",
+  "description": "Triase keluhan pelanggan: kategori masalah, tingkat urgensi, risiko pelanggan berhenti, permintaan refund, perlu dibalas atau tidak, dan emosi pelanggan.",
+  "state_key": "text",
+  "extra_state": {},
+  "include_sentiment": false,
+  "questions": {
+    "category": {
+      "type": "choice",
+      "instructions": "What is the customer's message mainly about?",
+      "criteria": {
+        "produk": "a defective, broken, wrong, or poor quality product",
+        "pengiriman": "a late, lost, or damaged delivery",
+        "pembayaran": "payment, billing, double charge, invoice, or refund problems",
+        "akun": "login, password, account access, or personal data",
+        "layanan": "rude, slow, or unhelpful customer service or staff",
+        "lainnya": "anything else"
+      }
+    },
+    "urgency": {
+      "type": "score",
+      "instructions": "How urgent is the customer's issue?",
+      "criteria": [
+        "low: no time pressure, general feedback or a question",
+        "medium: needs attention within a day or two",
+        "high: blocking problem, money lost, safety issue, or a hard deadline today"
+      ]
+    },
+    "churn_risk": {
+      "type": "noul",
+      "instructions": "Does the customer suggest they may stop using the service, cancel, switch to a competitor, or never buy again?",
+      "criteria": {
+        "false": "no sign the customer will leave",
+        "true": "the customer threatens or hints to cancel, leave, or switch"
+      }
+    },
+    "refund_requested": {
+      "type": "noul",
+      "instructions": "Does the customer ask for their money back, a refund, or a replacement?"
+    },
+    "needs_reply": {
+      "type": "noul",
+      "instructions": "Is the customer still waiting for help, an answer, or an action from the company?"
+    },
+    "emotion": {
+      "type": "choice",
+      "instructions": "What emotion does the customer mainly express?",
+      "criteria": {
+        "marah": "angry, furious, uses harsh words or threats",
+        "kecewa": "disappointed, sad, or let down but calm",
+        "netral": "calm, factual, no strong emotion",
+        "senang": "happy, grateful, or satisfied"
+      }
+    }
+  },
+  "builtin": true,
+  "updated_at": "2026-09-28T00:00:00.000Z"
+}

@@ -1,0 +1,50 @@
+{
+  "id": "ulasan-produk",
+  "title": "Ulasan produk",
+  "description": "Analisis ulasan produk e-commerce: sentimen, aspek yang dibahas, apakah pembeli merekomendasikan, apakah ada keluhan, dan perkiraan rating bintang 1-5.",
+  "state_key": "text",
+  "extra_state": {},
+  "include_sentiment": true,
+  "questions": {
+    "aspect": {
+      "type": "choice",
+      "instructions": "Which aspect of the purchase does this product review mainly talk about?",
+      "criteria": {
+        "kualitas": "product quality: material, durability, performance, whether it works or matches the description",
+        "harga": "price: value for money, too expensive, cheap, discounts",
+        "pengiriman": "delivery: shipping speed, courier, packaging, arrived damaged or late",
+        "pelayanan": "service: seller response, customer service, returns, communication",
+        "lainnya": "something else, or no specific aspect"
+      }
+    },
+    "would_recommend": {
+      "type": "noul",
+      "instructions": "Would the reviewer recommend this product to other buyers?",
+      "criteria": {
+        "false": "the reviewer would not recommend it, is unsure, or discourages buying",
+        "true": "the reviewer recommends it or is clearly happy enough to buy again"
+      }
+    },
+    "complaint": {
+      "type": "noul",
+      "instructions": "Does the review contain a complaint about the product, delivery, price, or seller?",
+      "criteria": {
+        "false": "no complaint; only praise or neutral information",
+        "true": "the reviewer complains about or criticizes something"
+      }
+    },
+    "rating": {
+      "type": "score",
+      "instructions": "What star rating would the reviewer most likely give this product?",
+      "criteria": [
+        "1 star: very bad, the reviewer is angry or feels cheated",
+        "2 stars: bad, clearly disappointed with major problems",
+        "3 stars: average or mixed, some good and some bad points",
+        "4 stars: good, satisfied with only minor issues",
+        "5 stars: excellent, delighted and strongly recommends it"
+      ]
+    }
+  },
+  "builtin": true,
+  "updated_at": "2026-09-28T00:00:00.000Z"
+}

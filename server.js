@@ -3,9 +3,10 @@
 // Sentiment scoring backend.
 // - Serves the static frontend from public/
 // - Manages a child `laya.exe serve` process (ggmlc Laya decision model, TypeSafe-compatible API)
-// - Exposes /api/status, /api/model, /api/presets, /api/score, /api/export
-// - Scoring modes: sentiment3 (choice), binary (noul), scale5 (score rubric 1..5), and "preset"
-//   (a laya /v1/presets question set, optionally plus the sentiment3 question)
+// - Exposes /api/status, /api/model, /api/presets[/:name], /api/templates[/:id], /api/score, /api/export
+// - Scoring modes: sentiment3 (choice), binary (noul), scale5 (score rubric 1..5), "preset"
+//   (a laya /v1/presets question set, optionally plus the sentiment3 question) and "custom"
+//   (a template from templates/<id>.json or an unsaved inline one; same output shape as preset)
 // - Every result carries a generic questions[] array so the UI can render any mode the same way
 
 const fs = require('fs');
@@ -775,6 +776,259 @@ function presetSummary(p) {
 }
 
 // ---------------------------------------------------------------------------
+// Question-set validation (shared by templates and custom scoring)
+// ---------------------------------------------------------------------------
+
+const QUESTION_TYPES = ['choice', 'noul', 'score'];
+const QUESTION_ID_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const MIN_QUESTIONS = 1;
+const MAX_QUESTIONS = 32;
+const MAX_OPTS = 16; // laya.max_opts of the shipped GGUFs (17 options -> laya 422)
+const MAX_INSTRUCTIONS = 1000;
+const MAX_CRITERION = 1000;
+const MAX_EXTRA_STATE_KEYS = 32;
+const MAX_EXTRA_STATE_VALUE = 10000;
+
+class ValidationError extends Error {}
+
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+// Validates and normalizes one question. Choice criteria values null/undefined -> "" (laya treats
+// null and "" the same: the option key alone is used). Noul criteria with both sides empty are
+// dropped. Throws ValidationError with a Bahasa Indonesia message.
+function normalizeQuestion(id, q) {
+  const where = `Pertanyaan "${id}"`;
+  if (!isPlainObject(q)) throw new ValidationError(`${where} harus berupa objek.`);
+  if (!QUESTION_TYPES.includes(q.type)) {
+    throw new ValidationError(`${where}: tipe "${q.type}" tidak valid. Pilihan: ${QUESTION_TYPES.join(', ')}.`);
+  }
+  if (typeof q.instructions !== 'string' || !q.instructions.trim()) {
+    throw new ValidationError(`${where}: instruksi (instructions) wajib diisi.`);
+  }
+  const instructions = q.instructions.trim();
+  if (instructions.length > MAX_INSTRUCTIONS) {
+    throw new ValidationError(`${where}: instruksi maksimal ${MAX_INSTRUCTIONS} karakter.`);
+  }
+  const out = { type: q.type, instructions };
+  if (q.type === 'choice') {
+    if (!isPlainObject(q.criteria)) {
+      throw new ValidationError(`${where}: tipe choice butuh criteria berupa objek {opsi: deskripsi}.`);
+    }
+    const entries = Object.entries(q.criteria);
+    if (entries.length < 2 || entries.length > MAX_OPTS) {
+      throw new ValidationError(`${where}: tipe choice butuh 2 sampai ${MAX_OPTS} opsi (diterima ${entries.length}).`);
+    }
+    const criteria = {};
+    for (const [key, desc] of entries) {
+      const k = key.trim();
+      if (!k || k.length > 64) throw new ValidationError(`${where}: nama opsi harus 1-64 karakter.`);
+      if (Object.prototype.hasOwnProperty.call(criteria, k)) throw new ValidationError(`${where}: opsi "${k}" duplikat.`);
+      if (desc !== null && desc !== undefined && typeof desc !== 'string') {
+        throw new ValidationError(`${where}: deskripsi opsi "${k}" harus berupa teks.`);
+      }
+      const d = (desc ?? '').trim();
+      if (d.length > MAX_CRITERION) throw new ValidationError(`${where}: deskripsi opsi "${k}" maksimal ${MAX_CRITERION} karakter.`);
+      criteria[k] = d;
+    }
+    out.criteria = criteria;
+  } else if (q.type === 'noul') {
+    if (q.criteria !== undefined && q.criteria !== null) {
+      const keys = isPlainObject(q.criteria) ? Object.keys(q.criteria) : null;
+      if (!keys || keys.length !== 2 || !keys.includes('false') || !keys.includes('true')) {
+        throw new ValidationError(`${where}: criteria tipe noul harus tepat berisi kunci "false" dan "true".`);
+      }
+      const f = q.criteria.false ?? '';
+      const t = q.criteria.true ?? '';
+      if (typeof f !== 'string' || typeof t !== 'string') {
+        throw new ValidationError(`${where}: deskripsi "false"/"true" harus berupa teks.`);
+      }
+      if (f.trim() || t.trim()) {
+        if (!f.trim() || !t.trim()) {
+          throw new ValidationError(`${where}: isi kedua deskripsi "false" dan "true", atau kosongkan keduanya.`);
+        }
+        if (f.trim().length > MAX_CRITERION || t.trim().length > MAX_CRITERION) {
+          throw new ValidationError(`${where}: deskripsi maksimal ${MAX_CRITERION} karakter.`);
+        }
+        out.criteria = { false: f.trim(), true: t.trim() };
+      }
+    }
+  } else {
+    if (!Array.isArray(q.criteria) || q.criteria.length < 2 || q.criteria.length > MAX_OPTS) {
+      throw new ValidationError(`${where}: tipe score butuh criteria berupa daftar 2 sampai ${MAX_OPTS} level.`);
+    }
+    out.criteria = q.criteria.map((c, i) => {
+      if (typeof c !== 'string' || !c.trim()) throw new ValidationError(`${where}: level ${i} tidak boleh kosong.`);
+      if (c.trim().length > MAX_CRITERION) throw new ValidationError(`${where}: level ${i} maksimal ${MAX_CRITERION} karakter.`);
+      return c.trim();
+    });
+  }
+  return out;
+}
+
+// Flat {key: string|number|boolean}. Returns a normalized copy ({} when missing).
+function normalizeExtraState(extra) {
+  if (extra === undefined || extra === null) return {};
+  if (!isPlainObject(extra)) throw new ValidationError('extra_state harus berupa objek {nama: nilai}.');
+  const entries = Object.entries(extra);
+  if (entries.length > MAX_EXTRA_STATE_KEYS) {
+    throw new ValidationError(`extra_state maksimal ${MAX_EXTRA_STATE_KEYS} field.`);
+  }
+  const out = {};
+  for (const [key, v] of entries) {
+    const k = key.trim();
+    if (!k || k.length > 64) throw new ValidationError('Nama field extra_state harus 1-64 karakter.');
+    if (!['string', 'number', 'boolean'].includes(typeof v) || (typeof v === 'number' && !Number.isFinite(v))) {
+      throw new ValidationError(`extra_state "${k}" harus berupa teks, angka, atau boolean.`);
+    }
+    if (typeof v === 'string' && v.length > MAX_EXTRA_STATE_VALUE) {
+      throw new ValidationError(`extra_state "${k}" maksimal ${MAX_EXTRA_STATE_VALUE} karakter.`);
+    }
+    out[k] = v;
+  }
+  return out;
+}
+
+// Validates the scoring part of a template: state_key, extra_state, include_sentiment, questions.
+// Returns {state_key, extra_state, include_sentiment, questions} (normalized).
+function validateQuestionSet(t) {
+  if (!isPlainObject(t)) throw new ValidationError('Template harus berupa objek JSON.');
+  const stateKey = typeof t.state_key === 'string' ? t.state_key.trim() : '';
+  if (!stateKey || stateKey.length > 64) throw new ValidationError('state_key wajib diisi (1-64 karakter).');
+  const includeSentiment = t.include_sentiment !== false;
+  if (!isPlainObject(t.questions)) throw new ValidationError('questions harus berupa objek {id: pertanyaan}.');
+  const ids = Object.keys(t.questions);
+  if (ids.length < MIN_QUESTIONS || ids.length > MAX_QUESTIONS) {
+    throw new ValidationError(`Jumlah pertanyaan harus ${MIN_QUESTIONS} sampai ${MAX_QUESTIONS} (diterima ${ids.length}).`);
+  }
+  const questions = {};
+  for (const id of ids) {
+    if (!QUESTION_ID_RE.test(id)) {
+      throw new ValidationError(
+        `ID pertanyaan "${id}" tidak valid: gunakan huruf, angka, dan underscore, diawali huruf/underscore, maksimal 64 karakter.`
+      );
+    }
+    if (id === 'sentiment' && includeSentiment) {
+      throw new ValidationError(
+        'ID pertanyaan "sentiment" bentrok dengan pertanyaan sentimen bawaan. Ganti ID-nya atau matikan include_sentiment.'
+      );
+    }
+    questions[id] = normalizeQuestion(id, t.questions[id]);
+  }
+  const extraState = normalizeExtraState(t.extra_state);
+  delete extraState[stateKey]; // the input text always wins
+  return { state_key: stateKey, extra_state: extraState, include_sentiment: includeSentiment, questions };
+}
+
+// ---------------------------------------------------------------------------
+// Templates (templates/<id>.json)
+// ---------------------------------------------------------------------------
+
+const TEMPLATES_DIR = path.join(ROOT, 'templates');
+const TEMPLATE_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const CUSTOM_MODE = 'custom';
+
+// preset and custom both score a question set (+ optional sentiment3) and share the same output.
+function isQuestionSetMode(mode) {
+  return mode === PRESET_MODE || mode === CUSTOM_MODE;
+}
+
+function isTemplateId(id) {
+  return typeof id === 'string' && TEMPLATE_ID_RE.test(id);
+}
+
+function templatePath(id) {
+  if (!isTemplateId(id)) throw new ValidationError(`ID template tidak valid: ${id}`);
+  return path.join(TEMPLATES_DIR, `${id}.json`);
+}
+
+function slugify(s) {
+  return String(s ?? '')
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 56)
+    .replace(/-+$/g, '');
+}
+
+// Reads templates/<id>.json; null if missing or unreadable. The id always comes from the file name.
+function readTemplate(id) {
+  let text;
+  try {
+    text = fs.readFileSync(templatePath(id), 'utf8');
+  } catch {
+    return null;
+  }
+  try {
+    const t = JSON.parse(text);
+    if (!isPlainObject(t)) return null;
+    return { ...t, id, builtin: t.builtin === true };
+  } catch (err) {
+    log(`Template ${id}.json rusak: ${err.message}`);
+    return null;
+  }
+}
+
+function listTemplates() {
+  let files = [];
+  try {
+    files = fs.readdirSync(TEMPLATES_DIR).filter((f) => f.endsWith('.json'));
+  } catch {
+    return [];
+  }
+  const list = [];
+  for (const f of files) {
+    const id = f.slice(0, -5);
+    if (!isTemplateId(id)) continue;
+    const t = readTemplate(id);
+    if (!t) continue;
+    list.push({
+      id,
+      title: String(t.title ?? id),
+      description: String(t.description ?? ''),
+      builtin: t.builtin,
+      question_count: isPlainObject(t.questions) ? Object.keys(t.questions).length : 0,
+      updated_at: t.updated_at ?? null,
+    });
+  }
+  list.sort((a, b) => Number(b.builtin) - Number(a.builtin) || a.title.localeCompare(b.title, 'id'));
+  return list;
+}
+
+// Full validation for saving. Returns the normalized template (without id/builtin/updated_at).
+function validateTemplate(t) {
+  if (!isPlainObject(t)) throw new ValidationError('Template harus berupa objek JSON.');
+  const title = typeof t.title === 'string' ? t.title.trim() : '';
+  if (!title || title.length > 120) throw new ValidationError('Judul (title) wajib diisi, maksimal 120 karakter.');
+  if (t.description !== undefined && t.description !== null && typeof t.description !== 'string') {
+    throw new ValidationError('Deskripsi harus berupa teks.');
+  }
+  const description = (t.description ?? '').trim();
+  if (description.length > 1000) throw new ValidationError('Deskripsi maksimal 1000 karakter.');
+  const set = validateQuestionSet(t);
+  return {
+    title,
+    description,
+    state_key: set.state_key,
+    extra_state: set.extra_state,
+    include_sentiment: set.include_sentiment,
+    questions: set.questions,
+  };
+}
+
+// Write via a temp file + rename so a crash never leaves a half-written template.
+function writeTemplate(template) {
+  fs.mkdirSync(TEMPLATES_DIR, { recursive: true });
+  const file = templatePath(template.id);
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(template, null, 2)}\n`, 'utf8');
+  fs.renameSync(tmp, file);
+}
+
+// ---------------------------------------------------------------------------
 // laya calls
 // ---------------------------------------------------------------------------
 
@@ -825,13 +1079,19 @@ async function scoreTexts(texts, mode) {
   });
 }
 
-// Preset mode: each text goes into {[state_key]: text} (other example-state fields are left out).
+// Preset / custom mode: each text goes into {...extraState, [state_key]: text} (the preset's own
+// example-state fields are left out unless passed as extraState).
 // With includeSentiment the sentiment3 question is asked in the same call under id "sentiment".
-async function scorePreset(texts, preset, includeSentiment) {
+async function scorePreset(texts, preset, includeSentiment, extraState = {}) {
   const questions = {};
   if (includeSentiment) questions.sentiment = MODES.sentiment3.question;
   for (const [id, q] of Object.entries(preset.questions)) if (id !== 'sentiment' || !includeSentiment) questions[id] = q;
-  const answersList = await decideAll(texts.map((text) => ({ [preset.state_key]: text })), questions);
+  // Blank string fields (e.g. an unfilled "from"/"subject" placeholder) are not sent.
+  const fixed = Object.fromEntries(Object.entries(extraState).filter(([, v]) => v !== ''));
+  const answersList = await decideAll(
+    texts.map((text) => ({ ...fixed, [preset.state_key]: text })),
+    questions
+  );
   return answersList.map((answers) => {
     const qs = [];
     let top = NULL_SENTIMENT;
@@ -872,8 +1132,9 @@ function buildAverage(results, mode, hasSentiment = true) {
   const n = results.length;
   const mean = (f) => (n ? round4(results.reduce((a, r) => a + num(f(r)), 0) / n) : 0);
   const questions = averageQuestions(results);
-  if (mode === PRESET_MODE && !hasSentiment) return { ...NULL_SENTIMENT, count: n, questions };
-  const sentMode = mode === PRESET_MODE ? 'sentiment3' : mode;
+  const isSet = isQuestionSetMode(mode);
+  if (isSet && !hasSentiment) return { ...NULL_SENTIMENT, count: n, questions };
+  const sentMode = isSet ? 'sentiment3' : mode;
   const score = mean((r) => r.score);
   const value = mean((r) => r.value);
   let label;
@@ -990,21 +1251,136 @@ app.get('/api/presets', async (req, res) => {
   }
 });
 
+// Full laya preset {name, title, blurb, state_key, state, questions} so the UI can load it into the
+// template editor (extra_state = state minus state_key).
+app.get('/api/presets/:name', async (req, res) => {
+  if (state.switching || !state.ready) return notReady(res);
+  let list;
+  try {
+    list = await getPresets();
+  } catch (err) {
+    log(`Presets error: ${err.message}`);
+    return res.status(502).json({ error: `Gagal memuat preset: ${err.message}` });
+  }
+  const p = list.find((x) => x.name === req.params.name);
+  if (!p) return res.status(404).json({ error: `Preset tidak dikenal: ${req.params.name}.` });
+  res.json({
+    name: p.name,
+    title: p.title ?? p.name,
+    blurb: p.blurb ?? '',
+    state_key: p.state_key,
+    state: isPlainObject(p.state) ? p.state : {},
+    questions: p.questions,
+  });
+});
+
+// Template list: [{id, title, description, builtin, question_count, updated_at}], built-ins first.
+app.get('/api/templates', (req, res) => {
+  res.json(listTemplates());
+});
+
+app.get('/api/templates/:id', (req, res) => {
+  const id = req.params.id;
+  const t = isTemplateId(id) ? readTemplate(id) : null;
+  if (!t) return res.status(404).json({ error: `Template tidak ditemukan: ${id}` });
+  res.json(t);
+});
+
+// Create or overwrite. Without an id, the id is derived from the title (with -2, -3... on collision).
+// Built-in templates cannot be overwritten (409).
+app.post('/api/templates', (req, res) => {
+  const body = req.body;
+  let clean;
+  try {
+    clean = validateTemplate(body);
+  } catch (err) {
+    if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
+    throw err;
+  }
+  let id = body.id;
+  if (id !== undefined && id !== null && id !== '') {
+    if (!isTemplateId(id)) {
+      return res.status(400).json({
+        error: 'ID template tidak valid: gunakan huruf kecil, angka, dan tanda "-", diawali huruf/angka, maksimal 64 karakter.',
+      });
+    }
+    const existing = readTemplate(id);
+    if (existing?.builtin) {
+      return res.status(409).json({ error: 'Template bawaan tidak bisa ditimpa, simpan dengan nama lain' });
+    }
+  } else {
+    const base = slugify(clean.title) || 'template';
+    id = base;
+    for (let i = 2; fs.existsSync(templatePath(id)); i++) id = `${base}-${i}`;
+  }
+  const template = { id, ...clean, builtin: false, updated_at: new Date().toISOString() };
+  try {
+    writeTemplate(template);
+  } catch (err) {
+    log(`Template save error: ${err.message}`);
+    return res.status(500).json({ error: `Gagal menyimpan template: ${err.message}` });
+  }
+  res.json(template);
+});
+
+app.delete('/api/templates/:id', (req, res) => {
+  const id = req.params.id;
+  const t = isTemplateId(id) ? readTemplate(id) : null;
+  if (!t) return res.status(404).json({ error: `Template tidak ditemukan: ${id}` });
+  if (t.builtin) return res.status(409).json({ error: 'Template bawaan tidak bisa dihapus' });
+  try {
+    fs.unlinkSync(templatePath(id));
+  } catch (err) {
+    return res.status(500).json({ error: `Gagal menghapus template: ${err.message}` });
+  }
+  res.status(204).end();
+});
+
 app.post('/api/score', async (req, res) => {
   const raw = req.body?.texts;
   if (!Array.isArray(raw)) return res.status(400).json({ error: 'Body harus berupa {"texts": string[]}' });
   const mode = req.body?.mode ?? DEFAULT_MODE;
-  if (typeof mode !== 'string' || (!MODES[mode] && mode !== PRESET_MODE)) {
-    return res
-      .status(400)
-      .json({ error: `Mode tidak dikenal: ${mode}. Pilihan: ${[...Object.keys(MODES), PRESET_MODE].join(', ')}.` });
+  if (typeof mode !== 'string' || (!MODES[mode] && !isQuestionSetMode(mode))) {
+    return res.status(400).json({
+      error: `Mode tidak dikenal: ${mode}. Pilihan: ${[...Object.keys(MODES), PRESET_MODE, CUSTOM_MODE].join(', ')}.`,
+    });
   }
   const isPreset = mode === PRESET_MODE;
+  const isCustom = mode === CUSTOM_MODE;
   const presetName = req.body?.preset;
   if (isPreset && (typeof presetName !== 'string' || !presetName)) {
     return res.status(400).json({ error: 'Mode preset butuh field "preset" (nama preset).' });
   }
-  const includeSentiment = req.body?.include_sentiment !== false;
+  let includeSentiment = req.body?.include_sentiment !== false;
+  // Custom mode: an inline (possibly unsaved) template, or a saved one by template_id.
+  let template = null;
+  let extraState = {};
+  try {
+    if (isPreset) extraState = normalizeExtraState(req.body?.extra_state);
+    if (isCustom) {
+      let src = req.body?.template;
+      const templateId = req.body?.template_id;
+      if (!isPlainObject(src)) {
+        if (!isTemplateId(templateId)) {
+          return res.status(400).json({ error: 'Mode custom butuh field "template" (objek) atau "template_id".' });
+        }
+        src = readTemplate(templateId);
+        if (!src) return res.status(400).json({ error: `Template tidak ditemukan: ${templateId}` });
+      }
+      const set = validateQuestionSet(src);
+      const id = isTemplateId(src.id) ? src.id : isTemplateId(templateId) ? templateId : null;
+      template = {
+        id,
+        title: typeof src.title === 'string' && src.title.trim() ? src.title.trim() : id || 'Template kustom',
+        ...set,
+      };
+      includeSentiment = set.include_sentiment;
+      extraState = set.extra_state;
+    }
+  } catch (err) {
+    if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
+    throw err;
+  }
   const texts = raw
     .filter((t) => typeof t === 'string' || typeof t === 'number')
     .map((t) => String(t).trim())
@@ -1026,21 +1402,32 @@ app.post('/api/score', async (req, res) => {
       return res.status(502).json({ error: `Gagal memuat preset: ${err.message}` });
     }
     if (!preset) return res.status(400).json({ error: `Preset tidak dikenal: ${presetName}.` });
+    delete extraState[preset.state_key]; // the input text always wins
   }
   try {
-    const scored = isPreset ? await scorePreset(texts, preset, includeSentiment) : await scoreTexts(texts, mode);
+    let scored;
+    if (isPreset) scored = await scorePreset(texts, preset, includeSentiment, extraState);
+    else if (isCustom) scored = await scorePreset(texts, template, includeSentiment, extraState);
+    else scored = await scoreTexts(texts, mode);
     // index is 0-based (frontend displays index + 1)
     const results = scored.map((s, index) => ({ index, text: texts[index], ...s }));
-    res.json({
+    const isSet = isPreset || isCustom;
+    const body = {
       mode,
       model,
       preset: preset ? preset.name : null,
       preset_title: preset ? preset.title ?? preset.name : null,
-      include_sentiment: isPreset ? includeSentiment : true,
+      include_sentiment: isSet ? includeSentiment : true,
       results,
-      average: buildAverage(results, mode, !isPreset || includeSentiment),
+      average: buildAverage(results, mode, !isSet || includeSentiment),
       latency_ms: Date.now() - t0,
-    });
+    };
+    if (isCustom) {
+      body.template_id = template.id;
+      body.template_title = template.title;
+    }
+    if (isSet) body.extra_state = extraState;
+    res.json(body);
   } catch (err) {
     log(`Scoring error: ${err.message}`);
     res.status(502).json({ error: `Gagal menilai teks: ${err.message}` });
@@ -1220,14 +1607,25 @@ function addPresetSheets(wb, { results, average, model, body }) {
     { header: 'Value', key: 'v', width: 40 },
   ];
   sum.getRow(1).font = { bold: true };
-  const rows = [
-    ['Mode', PRESET_MODE],
-    ['Preset', String(body.preset ?? '')],
-    ['Judul preset', String(body.preset_title ?? '')],
+  const isCustom = body.mode === CUSTOM_MODE;
+  const rows = isCustom
+    ? [
+        ['Mode', CUSTOM_MODE],
+        ['Template', String(body.template_id ?? '') || '(belum disimpan)'],
+        ['Judul template', String(body.template_title ?? '')],
+      ]
+    : [
+        ['Mode', PRESET_MODE],
+        ['Preset', String(body.preset ?? '')],
+        ['Judul preset', String(body.preset_title ?? '')],
+      ];
+  const extra = isPlainObject(body.extra_state) ? Object.entries(body.extra_state) : [];
+  for (const [k, v] of extra) rows.push([`State tetap: ${k}`, String(v)]);
+  rows.push(
     ['Model', model],
     ['Jumlah teks', results.length],
-    ['Sentimen disertakan', hasSentiment ? 'ya' : 'tidak'],
-  ];
+    ['Sentimen disertakan', hasSentiment ? 'ya' : 'tidak']
+  );
   if (hasSentiment) {
     rows.push(
       ['Label sentimen rata-rata', String(average?.label ?? '')],
@@ -1292,7 +1690,7 @@ app.post('/api/export', async (req, res) => {
   const body = req.body || {};
   const results = Array.isArray(body.results) ? body.results : null;
   if (!results || !results.length) return res.status(400).json({ error: 'Body harus berupa respons /api/score (results[]).' });
-  const isPreset = body.mode === PRESET_MODE;
+  const isPreset = isQuestionSetMode(body.mode); // preset and custom share the preset sheets
   const mode = isPreset || MODES[body.mode] ? body.mode : DEFAULT_MODE;
   const hasSentiment = !isPreset || results.some((r) => questionsOf(r).some((q) => q.id === 'sentiment'));
   const average =
@@ -1309,8 +1707,14 @@ app.post('/api/export', async (req, res) => {
     addDetailSheet(wb, results);
 
     const buf = await wb.xlsx.writeBuffer();
-    const presetTag = isPreset ? String(body.preset ?? '').replace(/[^A-Za-z0-9_-]/g, '') : '';
-    const filename = `${presetTag ? `preset-${presetTag}` : 'sentiment'}-${timestamp()}.xlsx`;
+    let prefix = 'sentiment';
+    if (body.mode === CUSTOM_MODE) {
+      prefix = `template-${isTemplateId(body.template_id) ? body.template_id : 'custom'}`;
+    } else if (isPreset) {
+      const presetTag = String(body.preset ?? '').replace(/[^A-Za-z0-9_-]/g, '');
+      if (presetTag) prefix = `preset-${presetTag}`;
+    }
+    const filename = `${prefix}-${timestamp()}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(Buffer.from(buf));
