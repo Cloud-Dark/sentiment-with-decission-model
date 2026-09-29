@@ -22,6 +22,15 @@
         "campuran": "clear good and bad points",
         "negatif": "genuinely dissatisfied, disappointed, or would not buy again"
       }
+    },
+    "would_buy_again": {
+      "type": "choice",
+      "instructions": "Will the writer buy or use this product or service again?",
+      "criteria": {
+        "ya": "yes, will buy or use it again",
+        "tidak": "no, will not buy or use it again",
+        "tidak_jelas": "not mentioned"
+      }
     }
   },
   "builtin": true,

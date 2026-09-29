@@ -10,6 +10,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/). Ve
 
 ### Added
 
+- Pertanyaan `would_buy_again` pada template `sentimen-sarkasme` dan `percakapan-cs-sarkasme` sebagai sinyal pendukung untuk kalimat sarkas.
 - Template bawaan `percakapan-cs-sarkasme` (analisis percakapan customer service ditambah deteksi sarkasme dan sikap asli pelanggan).
 - Template bawaan `sentimen-sarkasme` (deteksi sarkasme dan sikap asli penulis ulasan).
 - Template bawaan `percakapan-cs` untuk analisis percakapan customer service (maksud pelanggan, status penyelesaian, langkah berikutnya, eskalasi, urgensi, kualitas agen, risiko churn, emosi akhir, dan sentimen).

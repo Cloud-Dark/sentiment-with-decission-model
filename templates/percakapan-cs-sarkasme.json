@@ -107,6 +107,15 @@
         "campuran": "partly satisfied, partly still unhappy",
         "negatif": "genuinely dissatisfied, annoyed, or ready to leave, even if they use polite or praising words"
       }
+    },
+    "would_buy_again": {
+      "type": "choice",
+      "instructions": "Will the writer buy or use this product or service again?",
+      "criteria": {
+        "ya": "yes, will buy or use it again",
+        "tidak": "no, will not buy or use it again",
+        "tidak_jelas": "not mentioned"
+      }
     }
   },
   "builtin": true,

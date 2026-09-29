@@ -74,8 +74,8 @@ ditulis dalam bahasa Inggris. Bahasa Indonesia juga bisa. Teks yang dinilai bole
 | `keluhan-pelanggan` | Kategori, `urgency` (3 level), `churn_risk`, `refund_requested`, `needs_reply`, dan `emotion` (marah/kecewa/netral/senang). |
 | `moderasi-komentar` | `toxic`, `harassment`, `hate`, `spam`, dan `severity` (3 level). |
 | `percakapan-cs` | Transkrip chat pelanggan–agen (`state_key` = `transcript`; baris diawali `Pelanggan:` / `Agen:`). Sentimen, `intent` (8 kategori), `resolution_status`, `next_action`, `needs_escalation`, `urgency` (3 level), `agent_quality` (4 level), `churn_risk`, dan `final_emotion` (marah/kecewa/netral/puas). `extra_state` opsional: `channel`, `customer_tier`. |
-| `percakapan-cs-sarkasme` | Gabungan `percakapan-cs` dan deteksi sarkasme pelanggan: semua pertanyaan `percakapan-cs` ditambah `sarcasm` dan `real_attitude`. |
-| `sentimen-sarkasme` | Sentimen, `sarcasm` (pujian ironis), dan `real_attitude` (positif/campuran/negatif) dengan memperhitungkan sarkasme dan slang. `state_key` = `transcript`. |
+| `percakapan-cs-sarkasme` | Gabungan `percakapan-cs` dan deteksi sarkasme pelanggan: semua pertanyaan `percakapan-cs` ditambah `sarcasm`, `real_attitude`, dan `would_buy_again`. |
+| `sentimen-sarkasme` | Sentimen, `sarcasm` (pujian ironis), `real_attitude` (positif/campuran/negatif) dengan memperhitungkan sarkasme dan slang, serta `would_buy_again` (ya/tidak/tidak_jelas) sebagai sinyal pendukung karena sentimen dan `real_attitude` cenderung mengikuti kata pujian pada kalimat sarkas. `state_key` = `transcript`. |
 | `email-triage` | Salinan preset `email` Laya. Isi `from`/`subject` di `extra_state` agar hasilnya lebih mirip Studio. |
 
 ## API
