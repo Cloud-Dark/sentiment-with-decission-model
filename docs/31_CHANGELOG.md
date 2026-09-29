@@ -1,7 +1,7 @@
 # Changelog
 
 > Status: Draft
-> Terakhir diperbarui: 2026-09-28
+> Terakhir diperbarui: 2026-09-29
 > Pemilik: _TBD_
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/). Versi `package.json` masih `1.0.0` dan belum ada tag rilis, sehingga entri dikelompokkan per commit. Aturan rilis: [standards/07_RELEASE_STANDARD.md](standards/07_RELEASE_STANDARD.md).
@@ -15,6 +15,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/). Ve
 
 ### Changed
 
+- Tampilan `public/index.html` dirombak ke gaya Editorial Brutalism: header sticky dengan status model, toggle tema terang/gelap, footer, tombol kembali ke atas, strip ringkasan hasil, dan kartu hasil multi-kolom (1/2/3 kolom sesuai lebar layar).
 - `models/README.md` dan `templates/README.md` diberi blok header status dokumen; isi tidak diubah.
 
 ## [bf78ba9] - 2026-09-28

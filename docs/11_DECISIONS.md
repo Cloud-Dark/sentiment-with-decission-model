@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
 > Status: Draft
-> Terakhir diperbarui: 2026-09-28
+> Terakhir diperbarui: 2026-09-29
 > Pemilik: _TBD_
 
 Setiap ADR berstatus **Diterima** dan tercermin di kode pada commit `dcc4574` atau `bf78ba9`, kecuali disebut lain.
@@ -58,4 +58,5 @@ Setiap ADR berstatus **Diterima** dan tercermin di kode pada commit `dcc4574` at
 
 - **Konteks**: Aplikasi lokal, pengguna tidak selalu daring, dan tidak ingin ada langkah build.
 - **Keputusan**: Seluruh UI (HTML, CSS, JavaScript ES5) berada di `public/index.html`, tanpa CDN, font, atau library eksternal. Ikon favicon berupa data URI. DOM dibangun lewat `textContent`.
-- **Konsekuensi**: Tidak ada dependensi frontend dan tidak ada build. Berkas besar (sekitar 1630 baris) sehingga lebih sulit dipelihara; tidak ada modul atau tes unit frontend.
+- **Konsekuensi**: Tidak ada dependensi frontend dan tidak ada build. Berkas besar sehingga lebih sulit dipelihara; tidak ada modul atau tes unit frontend.
+- **Revisi 2026-09-29**: Tampilan mengadopsi gaya "Editorial Brutalism / Operator's Desk" dan memuat font Bricolage Grotesque, Hanken Grotesk, dan JetBrains Mono dari Google Fonts. Saat luring, halaman tetap berfungsi dengan font sistem sebagai fallback; tidak ada library JavaScript eksternal.

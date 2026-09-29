@@ -8,19 +8,22 @@ Folder ini berisi frontend aplikasi: satu berkas `index.html` yang disajikan sta
 
 ## Isi berkas
 
-`index.html` memuat HTML, CSS, dan JavaScript (ES5, satu IIFE) sekaligus. Tidak ada library, CDN, font eksternal, maupun langkah build, sehingga halaman berjalan tanpa internet ([ADR-009](../docs/11_DECISIONS.md#adr-009-frontend-satu-berkas-offline)).
+`index.html` memuat HTML, CSS, dan JavaScript (ES5, satu IIFE) sekaligus. Tidak ada library, CDN script, maupun langkah build ([ADR-009](../docs/11_DECISIONS.md#adr-009-frontend-satu-berkas-offline)). Satu-satunya aset eksternal adalah stylesheet Google Fonts (Bricolage Grotesque, Hanken Grotesk, JetBrains Mono). Tanpa internet, halaman tetap berjalan dengan font sistem sebagai cadangan.
+
+Tema terang/gelap diatur tombol di header dan disimpan di `localStorage.theme`. Jika belum ada, tema mengikuti `prefers-color-scheme` dan diterapkan sebelum halaman digambar.
 
 ## Bagian halaman
 
 | Bagian | Fungsi |
 | --- | --- |
-| Status model | Status laya, model aktif, pemilih model, perangkat |
+| Header (sticky) | Status laya (titik live), model aktif, pemilih model, perangkat, tombol tema, bilah progres gulir |
 | Mode | `sentiment3`, `binary`, `scale5` (eksperimental), Preset / Template |
 | Preset / Template | Pilihan template atau preset Laya, opsi sertakan sentimen, tombol editor |
 | Editor | Builder pertanyaan, Raw JSON, `extra_state`, Uji, Simpan, Salin JSON, Reset, Hapus |
 | Input teks | Kotak teks dinamis dan tempel massal |
-| Hasil | Rata-rata, hasil per teks dan per pertanyaan, peringatan hasil kedaluwarsa |
+| Hasil | Ringkasan (jumlah teks, skor rata-rata, distribusi label, model dan latensi, rata-rata probabilitas atau per pertanyaan), kartu per teks (label, skor, probabilitas, pertanyaan dalam baris yang bisa dibuka), peringatan hasil kedaluwarsa |
 | Aksi | Analisis (`Ctrl + Enter`), Reset, Ekspor Excel |
+| Footer | Info model dan perangkat, tautan dokumentasi, hak cipta; tombol kembali ke atas muncul setelah gulir 300px |
 
 ## Komunikasi dengan API
 
