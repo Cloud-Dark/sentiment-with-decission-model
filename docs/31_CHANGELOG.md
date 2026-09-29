@@ -10,6 +10,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/). Ve
 
 ### Added
 
+- Benchmark model ([FR-015](03_FRD.md#fr-015-benchmark-model)): `POST /api/benchmark` (streaming NDJSON; memuat setiap model di `models/` secara bergantian, melewati berkas duplikat berdasarkan md5, melanjutkan saat ada model rusak, lalu memulihkan model awal), `POST /api/benchmark/cancel`, dan `POST /api/benchmark/export` (XLSX dengan sheet `Ringkasan`, `Perbandingan`, dan satu sheet per model). `/api/status` memuat field `benchmark`.
 - Snapshot preset laya `presets/laya-presets.json` (salinan `GET /v1/presets`, 10 preset) beserta `presets/README.md`.
 - `scripts/sync-presets.js` dan skrip npm `presets:sync` untuk memperbarui snapshot setelah upgrade laya.
 - Respons `/api/score` memuat `usage` (`input_tokens`, `output_tokens`, `latency_ms`, `total_tokens`) yang dijumlahkan dari seluruh permintaan per teks.
@@ -21,6 +22,9 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/). Ve
 
 - `server.js` menjalankan `laya.exe daemon` (stdin/stdout, JSON per baris) alih-alih `laya.exe serve`. Aplikasi kini hanya membuka port web. Penilaian dilakukan per teks secara berurutan karena daemon tidak memiliki batch; bentuk respons `/api/*` lainnya tidak berubah ([ADR-010](11_DECISIONS.md#adr-010-laya-daemon-via-stdio-alih-alih-serve)).
 - Definisi preset dibaca dari snapshot saat boot, bukan dari `/v1/presets` laya.
+- Inti `/api/score` dipisah menjadi `prepareScoreJob` dan `runScoreJob` agar dapat dipakai ulang oleh benchmark; bentuk respons tidak berubah. `switchModel` kini mengembalikan hasil pemuatan dan menerima opsi untuk melewati fallback CPU pada galat muat/metadata. Pembuat sheet Results dipisah (`addSentimentResultsSheet`, `addPresetResultsSheet`) agar dipakai ulang oleh ekspor benchmark.
+- Model yang gagal dimuat sebelum baris ready kini dilaporkan dengan pesan dari stderr laya (misalnya metadata `ggmlc.graph_spec` tidak ada), bukan hanya kode keluar.
+- `/api/score` dan `/api/model` mengembalikan 409 selama benchmark berjalan.
 - Tampilan `public/index.html` dirombak ke gaya Editorial Brutalism: header sticky dengan status model, toggle tema terang/gelap, footer, tombol kembali ke atas, strip ringkasan hasil, dan kartu hasil multi-kolom (1/2/3 kolom sesuai lebar layar).
 - `models/README.md` dan `templates/README.md` diberi blok header status dokumen; isi tidak diubah.
 

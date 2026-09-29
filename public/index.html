@@ -434,6 +434,155 @@
   .lvl i.cur { background: var(--signal); }
   .lvl.big i { width: 14px; height: 18px; }
 
+  /* ============ Benchmark: toggle + model checklist ============ */
+  .bm-box { margin-top: 18px; padding-top: 18px; border-top: 1.5px solid var(--edge); display: grid; gap: 14px; min-width: 0; }
+  .switch { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; align-items: start; cursor: pointer; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+  .sw-track {
+    grid-row: 1 / span 2; position: relative; width: 46px; height: 26px; margin-top: 1px;
+    border: 1.5px solid var(--edge); background: var(--paper-sunken); box-shadow: 2px 2px 0 var(--shadow-c);
+    transition: background-color .15s ease;
+  }
+  .sw-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 17px; height: 17px; background: var(--ink); transition: transform .22s var(--ease); }
+  .switch input:checked + .sw-track { background: var(--signal); }
+  .switch input:checked + .sw-track::after { transform: translateX(20px); background: var(--signal-ink); }
+  .switch input:focus-visible + .sw-track { outline: 2px solid var(--signal); outline-offset: 2px; }
+  .switch input:disabled + .sw-track, .switch input:disabled ~ span { opacity: .5; }
+  .switch:has(input:disabled) { cursor: not-allowed; }
+  .sw-t { font: 700 16px/1.2 var(--font-display); letter-spacing: -.01em; }
+  .sw-d { grid-column: 2; font-size: 13px; line-height: 1.4; color: var(--ink-soft); }
+  .bm-opts { display: grid; gap: 12px; min-width: 0; }
+  .bm-pick { border: 1.5px solid var(--edge); background: var(--paper); min-width: 0; }
+  .bm-pick-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding: 6px 8px 6px 12px; border-bottom: 1.5px solid var(--edge); }
+  .bm-pick-head .lbl { flex: 1 1 auto; }
+  .bm-pick-head .res-meta { flex: none; }
+  .bm-pick-head button.ghost { padding: 6px 4px; min-height: 32px; font-size: 10.5px; }
+  .bm-models { display: grid; max-height: 264px; overflow-y: auto; }
+  .bm-m { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--rule); cursor: pointer; }
+  .bm-m:last-child { border-bottom: 0; }
+  .bm-m:hover { background: var(--paper-sunken); }
+  .bm-m input { width: 18px; height: 18px; margin: 0; accent-color: var(--ink); grid-row: 1 / span 2; }
+  .bm-m .bm-f { font: 600 12.5px/1.3 var(--font-mono); overflow-wrap: anywhere; }
+  .bm-m small { grid-column: 2; font: 11px var(--font-mono); color: var(--ink-soft); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .bm-m:has(input:disabled) { cursor: not-allowed; opacity: .6; }
+  .bm-models > .hint { padding: 10px 12px; }
+
+  /* ============ Benchmark: progress panel ============ */
+  .panel.bm-run { margin-top: 20px; padding: 0; }
+  .bm-run-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 14px 16px; }
+  .bm-count { font: 800 24px/1 var(--font-display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .bm-time { font: 600 13px var(--font-mono); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .bm-run-head .spacer { flex: 1; }
+  .bm-meter { height: 12px; border-top: 1.5px solid var(--edge); border-bottom: 1.5px solid var(--edge); background: var(--paper-sunken); }
+  .bm-meter > span { display: block; height: 100%; width: 0; background: var(--signal); box-shadow: 1.5px 0 0 var(--edge); transition: width .5s var(--ease); }
+  .bm-run-msg { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--rule-strong); font: 12px/1.5 var(--font-mono); color: var(--ink-soft); overflow-wrap: anywhere; }
+  .bm-list { list-style: none; margin: 0; padding: 0; }
+  .bm-li { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 6px 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--rule-strong); }
+  .bm-li:last-child { border-bottom: 0; }
+  .bm-li.on { background: var(--signal-wash); }
+  .bm-no { display: inline-block; min-width: 34px; font: 700 11px/1 var(--font-mono); color: var(--on-ink); background: var(--ink); padding: 5px 4px; text-align: center; font-variant-numeric: tabular-nums; flex: none; }
+  .bm-file { display: flex; align-items: center; gap: 8px; min-width: 0; font: 600 13px var(--font-mono); }
+  .bm-file .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bm-size { flex: none; font: 500 11.5px var(--font-mono); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .bm-li-r { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-width: 0; }
+  .bm-ms { font: 11.5px var(--font-mono); color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .bm-ms b { color: var(--ink); font-weight: 600; }
+  @media (min-width: 768px) {
+    .bm-li { grid-template-columns: 38px minmax(0, 1fr) auto; }
+    .bm-li-r { grid-column: auto; justify-content: flex-end; }
+    .bm-ms { min-width: 8.5em; text-align: right; }
+  }
+  /* State chips */
+  .sc {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0;
+    font: 700 10px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase;
+    padding: 5px 7px; border: 1.5px solid var(--rule-strong); color: var(--ink-soft); background: var(--paper);
+  }
+  .sc > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sc .spinner { width: 9px; height: 9px; border-width: 1.5px; flex: none; }
+  .sc.run { border-color: var(--edge); color: var(--ink); }
+  .sc.ok { background: var(--signal); color: var(--signal-ink); border-color: var(--edge); }
+  .sc.fail { color: var(--destructive); border-color: var(--destructive); }
+  .sc.dup { border-style: dashed; border-color: var(--edge); color: var(--ink); text-transform: none; letter-spacing: .02em; }
+  .sc.dup b { text-transform: uppercase; letter-spacing: .14em; font-weight: 700; flex: none; }
+  .sc.stop { border-style: dashed; }
+
+  /* ============ Benchmark: results ============ */
+  .bm-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 32px; }
+  .bm-tools .hint { min-width: 0; overflow-wrap: anywhere; }
+  .bm-block { margin-bottom: 44px; min-width: 0; }
+  /* a) Summary: bordered grid, stacked on phones */
+  .bm-sum { border-top: 1.5px solid var(--edge); border-left: 1.5px solid var(--edge); background: var(--paper-raised); box-shadow: var(--sh); }
+  .bm-r { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: row dense; border-right: 1.5px solid var(--edge); border-bottom: 1.5px solid var(--edge); }
+  .bm-r > * { padding: 12px 14px; min-width: 0; }
+  .bm-r > .c-model { grid-column: 1 / -1; border-bottom: 1px solid var(--rule-strong); display: grid; gap: 8px; }
+  .bm-r > .c-avg { grid-column: span 2; }
+  .bm-r > .c-dist, .bm-r > .c-note { grid-column: 1 / -1; }
+  .bm-r > .c-note { font-size: 14px; overflow-wrap: anywhere; }
+  .bm-r > .c-note.err { color: var(--destructive); }
+  .bm-r > .c-note.dim { color: var(--ink-soft); }
+  .bm-r.pending > :not(.c-model) { color: var(--ink-faint); }
+  .bm-r.live { background: linear-gradient(90deg, var(--signal-wash), transparent 70%); }
+  .bm-hd { display: none; }
+  .bm-k { display: block; font: 600 9.5px var(--font-mono); letter-spacing: .18em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 5px; }
+  .bm-mh { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .bm-name { font: 700 14px/1.3 var(--font-mono); overflow-wrap: anywhere; min-width: 0; }
+  .bm-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; font: 11.5px var(--font-mono); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .bm-tag { display: inline-flex; align-items: center; gap: 5px; font: 700 9.5px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; padding: 4px 6px; background: var(--signal); color: var(--signal-ink); border: 1.5px solid var(--edge); box-shadow: 2px 2px 0 var(--shadow-c); white-space: nowrap; }
+  .bm-v { font: 600 14px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .bm-big { display: block; font: 700 28px/1 var(--font-mono); letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
+  .bm-cap { display: block; margin-top: 5px; font: 600 9px var(--font-mono); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-soft); }
+  .dist.sm { height: 12px; }
+  .legend.sm { margin-top: 7px; gap: 4px 12px; font-size: 10px; letter-spacing: .06em; }
+  .legend.sm i { width: 10px; height: 10px; }
+  .bm-agree { display: flex; align-items: baseline; gap: 6px; }
+  .bm-agree .bm-big { font-size: 24px; }
+  .bm-note { margin: 12px 0 0; font-size: 13px; color: var(--ink-soft); max-width: 80ch; }
+  @media (min-width: 1000px) {
+    .bm-r { grid-template-columns: minmax(0, 2.5fr) repeat(3, minmax(0, .78fr)) minmax(0, 1fr) minmax(0, 1.55fr) minmax(0, .95fr); }
+    .bm-r > * + * { border-left: 1px solid var(--rule-strong); }
+    .bm-r > .c-model { grid-column: auto; border-bottom: 0; align-content: start; }
+    .bm-r > .c-avg, .bm-r > .c-dist { grid-column: auto; }
+    .bm-r > .c-note { grid-column: 2 / -1; align-self: center; }
+    .bm-r .bm-k { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: 0; }
+    .bm-hd { display: grid; background: var(--ink); color: var(--on-ink); }
+    .bm-hd > * { padding: 10px 14px; font: 600 10px/1.3 var(--font-mono); letter-spacing: .16em; text-transform: uppercase; }
+    .bm-hd > * + * { border-left-color: rgba(128, 128, 110, .35); }
+  }
+  /* b) Per-text matrix: scrolls inside its own box, sticky first column */
+  .bm-qbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 14px; }
+  .bm-qbar select { width: auto; max-width: 100%; flex: 0 1 320px; font: 600 13px var(--font-mono); padding-top: 7px; padding-bottom: 7px; background-color: var(--paper-raised); }
+  .bm-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; border: 1.5px solid var(--edge); background: var(--paper-raised); box-shadow: var(--sh); }
+  .bm-mx { border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: 13px; }
+  .bm-mx th, .bm-mx td { padding: 10px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule-strong); border-right: 1px solid var(--rule-strong); }
+  .bm-mx tr > :last-child { border-right: 0; }
+  .bm-mx tbody tr:last-child > * { border-bottom: 0; }
+  .bm-mx thead th { background: var(--ink); color: var(--on-ink); font: 600 10px/1.35 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; border-right-color: rgba(128, 128, 110, .35); border-bottom: 1.5px solid var(--edge); vertical-align: bottom; }
+  .bm-mx thead .bm-no { background: var(--signal); color: var(--signal-ink); margin-bottom: 6px; }
+  .bm-th-f { display: block; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11px; max-width: 16em; overflow-wrap: anywhere; }
+  .bm-mx .stk { position: sticky; left: 0; z-index: 1; background: var(--paper-raised); width: min(42vw, 280px); min-width: min(42vw, 280px); max-width: min(42vw, 280px); border-right: 1.5px solid var(--edge); box-shadow: 4px 0 0 -2px var(--rule); }
+  .bm-mx thead .stk { z-index: 2; background: var(--ink); }
+  .bm-mx td { min-width: 128px; }
+  .bm-tx { margin: 4px 0 0; font-size: 13px; line-height: 1.4; font-weight: 400; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .bm-cv { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  .bm-cv .q-val { justify-content: flex-start; flex-wrap: wrap; }
+  .bm-cv .q-win { max-width: 12em; }
+  .bm-cs { font: 600 12px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+  .bm-mx td.off { background: repeating-linear-gradient(135deg, var(--rule) 0 1px, transparent 1px 6px), var(--paper-raised); outline: 1.5px dashed var(--edge); outline-offset: -5px; }
+  .bm-mx td.maj { background: var(--paper-sunken); }
+  .bm-mx thead th.maj { background: var(--ink); }
+  .bm-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; font: 11px var(--font-mono); color: var(--ink-soft); }
+  .bm-legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .bm-legend i { width: 16px; height: 12px; border: 1.5px dashed var(--edge); background: repeating-linear-gradient(135deg, var(--rule-strong) 0 1px, transparent 1px 4px); flex: none; }
+  /* c) Detail per model */
+  .bm-tabs { overflow-x: auto; margin-bottom: 18px; scrollbar-width: thin; }
+  .bm-tabs button { flex: none; max-width: 260px; gap: 8px; text-transform: none; letter-spacing: .02em; }
+  .bm-tabs button .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .bm-tabs button .bm-no { background: var(--ink-soft); }
+  .bm-tabs button[aria-selected="true"] .bm-no { background: var(--signal); color: var(--signal-ink); }
+  .bm-dmeta { display: block; margin-bottom: 16px; }
+  .bm-empty { padding: 18px; border: 1.5px dashed var(--edge); color: var(--ink-soft); font-size: 14px; background: var(--paper-raised); }
+
   /* ============ Footer ============ */
   .foot { margin-top: 72px; border-top: 4px solid var(--edge); background: var(--paper-raised); overflow: hidden; position: relative; }
   .foot-grid { display: grid; gap: 32px; padding-top: 40px; padding-bottom: 32px; grid-template-columns: minmax(0, 1fr); }
@@ -619,6 +768,27 @@
               </div>
             </div>
           </div>
+
+          <div class="bm-box" id="benchBox">
+            <label class="switch">
+              <input type="checkbox" id="benchToggle" aria-describedby="benchHelp">
+              <span class="sw-track" aria-hidden="true"></span>
+              <span class="sw-t">Bandingkan semua model (benchmark)</span>
+              <span class="sw-d" id="benchHelp">Setiap model dimuat bergantian lalu diuji dengan teks yang sama.</span>
+            </label>
+            <div class="bm-opts" id="benchOpts" hidden>
+              <div class="bm-pick" role="group" aria-labelledby="benchPickLbl">
+                <div class="bm-pick-head">
+                  <span class="lbl" id="benchPickLbl">Model yang diuji</span>
+                  <span class="res-meta" id="benchPickCount"></span>
+                  <button type="button" class="ghost" id="benchAll">Semua</button>
+                  <button type="button" class="ghost" id="benchNone">Kosongkan</button>
+                </div>
+                <div class="bm-models" id="benchModels"><span class="hint">Memuat daftar model…</span></div>
+              </div>
+              <label class="check"><input type="checkbox" id="benchDup"> Sertakan file duplikat</label>
+            </div>
+          </div>
         </div>
       </section>
     </div>
@@ -632,6 +802,18 @@
         <button type="button" id="btnExport" disabled>Export ke Excel</button>
       </div>
       <div class="alert" id="err" role="alert" hidden></div>
+      <div class="panel bm-run" id="benchRun" hidden aria-labelledby="benchRunTitle">
+        <div class="bm-run-head">
+          <span class="kicker" id="benchRunTitle">Benchmark</span>
+          <span class="bm-count" id="benchCount" aria-live="polite">Model 0/0</span>
+          <span class="bm-time" id="benchTime">00:00</span>
+          <span class="spacer"></span>
+          <button type="button" class="small danger" id="benchCancel">Batalkan</button>
+        </div>
+        <div class="bm-meter" role="progressbar" aria-labelledby="benchRunTitle" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="benchMeter"><span id="benchBar"></span></div>
+        <p class="bm-run-msg" id="benchMsg" hidden></p>
+        <ol class="bm-list" id="benchList"></ol>
+      </div>
     </section>
 
     <section class="sec" id="results" aria-labelledby="hRes" hidden>
@@ -641,9 +823,41 @@
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3L2 20h20L12 3zM12 10v4M12 16.5v.5"/></svg>
         <span class="stale-k">Usang</span><span id="staleTxt"></span>
       </div>
-      <div class="stats" id="summary"></div>
-      <div class="res-sub"><span class="kicker" id="rowsHead">Hasil per teks</span></div>
-      <div class="cards" id="rows"></div>
+      <div id="normalRes">
+        <div class="stats" id="summary"></div>
+        <div class="res-sub"><span class="kicker" id="rowsHead">Hasil per teks</span></div>
+        <div class="cards" id="rows"></div>
+      </div>
+      <div id="benchRes" hidden>
+        <div class="bm-tools">
+          <button type="button" class="primary" id="benchExport" disabled>Export benchmark ke Excel</button>
+          <button type="button" id="benchCopy" disabled>Salin ringkasan</button>
+          <span class="hint" id="benchToolMsg" role="status"></span>
+        </div>
+        <div class="bm-block">
+          <div class="res-sub"><span class="kicker">a · Ringkasan model</span></div>
+          <div class="bm-sum" id="benchSum" role="table" aria-label="Ringkasan model"></div>
+          <p class="bm-note" id="benchSumNote"></p>
+        </div>
+        <div class="bm-block">
+          <div class="res-sub"><span class="kicker">b · Perbandingan per teks</span></div>
+          <div class="bm-qbar" id="benchQBar" hidden>
+            <label class="lbl" for="benchQ">Pertanyaan</label>
+            <select id="benchQ"></select>
+          </div>
+          <div id="benchMx"></div>
+        </div>
+        <div class="bm-block">
+          <div class="res-sub"><span class="kicker">c · Detail per model</span></div>
+          <div class="tabs bm-tabs" role="tablist" aria-label="Detail per model" id="benchTabs"></div>
+          <div id="benchDetail" role="tabpanel">
+            <span class="res-meta bm-dmeta" id="benchDMeta"></span>
+            <div class="stats" id="benchDSum"></div>
+            <div class="res-sub"><span class="kicker" id="benchDHead">Hasil per teks</span></div>
+            <div class="cards" id="benchDRows"></div>
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 </main>
@@ -951,7 +1165,7 @@
   function loadPresets() {
     if (presetsBusy) return;
     clearTimeout(presetTimer);
-    if (!srv.ready || srv.switching) return; // retried from applyStatus once ready
+    if (!srv.ready || srv.switching || srv.bench) return; // retried from applyStatus once ready
     presetsBusy = true;
     var forModel = srv.model, failed = '';
     Promise.all([
@@ -1434,7 +1648,8 @@
 
   /* ---------- Status & model picker ---------- */
   var statusTimer = null;
-  var srv = { device: null, ready: false, switching: false, model: null, models: [] };
+  var srv = { device: null, ready: false, switching: false, model: null, models: [], bench: null };
+  var BENCH_STAGE = { preparing: 'menyiapkan', loading: 'memuat', scoring: 'menguji', restoring: 'memulihkan model awal' };
   var modelsKey = '', pendingFile = null;
   function setStatus(state, model, device, msg) {
     $('stDot').className = 'dot ' + state;
@@ -1479,6 +1694,8 @@
     if (!srv.switching) pendingFile = null;
     srv.model = s.model || null;
     srv.models = Array.isArray(s.models) ? s.models : [];
+    srv.bench = s.benchmark && typeof s.benchmark === 'object' && s.benchmark.running !== false ? s.benchmark
+      : (benchRunning ? srv.bench : null); // our own run may start before the server reports it
     var msg = String(s.message || '');
     var state;
     if (srv.switching) state = 'loading';
@@ -1489,8 +1706,11 @@
     if (srv.switching && !/mengganti/i.test(msg)) msg = 'Mengganti model…' + (msg ? ' ' + msg : '');
     setStatus(state, name, s.device, msg);
     renderModels(s);
-    // Presets depend on the loaded model: (re)load once ready or after a switch.
-    if (srv.ready && !srv.switching && (!presetsLoaded || presetsModel !== srv.model) && !presetsBusy) {
+    renderBenchModels();
+    if (srv.bench) showBenchStatus(s.device);
+    // Presets depend on the loaded model: (re)load once ready or after a switch (not while a
+    // benchmark cycles through models; the original model is restored afterwards).
+    if (!srv.bench && srv.ready && !srv.switching && (!presetsLoaded || presetsModel !== srv.model) && !presetsBusy) {
       if (presetsModel !== srv.model) { presetsLoaded = false; presets = []; renderCatalog(); }
       loadPresets();
     }
@@ -1504,7 +1724,7 @@
       .then(function (r) { return r.json(); })
       .then(function (s) {
         applyStatus(s);
-        schedulePoll(srv.ready && !srv.switching ? 15000 : 1000);
+        schedulePoll(srv.ready && !srv.switching && !srv.bench ? 15000 : 1000);
       })
       .catch(function () {
         srv.ready = false;
@@ -1565,6 +1785,7 @@
     return ta;
   }
   function renumber() {
+    if (shown === 'bench') updateStale();
     var fs = fields();
     fs.forEach(function (f, i) {
       var lb = f.querySelector('label');
@@ -1602,24 +1823,43 @@
     });
     $('bulkText').value = '';
     toggleBulk(false);
+    if (shown === 'bench') updateStale();
   });
+  inputs.addEventListener('input', function () { if (shown === 'bench') updateStale(); });
 
   /* ---------- Analyze ---------- */
   var lastResponse = null, lastReq = null, busy = false;
   function showError(msg) { $('err').textContent = msg || ''; $('err').hidden = !msg; }
-  function canAnalyze() { return srv.ready && !srv.switching; }
+  function canAnalyze() { return srv.ready && !srv.switching && !srv.bench && !benchRunning; }
   function updateControls() {
+    var running = !!(benchRunning || srv.bench);
     var ok = canAnalyze();
     var needPreset = mode === 'preset' && !setReady();
-    $('btnAnalyze').disabled = busy || !ok || needPreset;
-    $('btnAnalyze').title = ok ? (needPreset ? (draft ? 'Perbaiki isian preset/template (Atur preset)' : 'Pilih preset atau template terlebih dahulu') : '') : (srv.switching ? 'Model sedang diganti' : 'Model belum siap');
-    $('stModelSel').disabled = busy || srv.switching || !srv.ready;
-    $('btnExport').disabled = busy || !lastResponse;
+    var noModels = !!benchOn && !benchSelected().length;
+    $('btnAnalyze').disabled = busy || !ok || needPreset || noModels;
+    $('btnAnalyze').title = running ? 'Benchmark sedang berjalan' : ok ? (needPreset ? (draft ? 'Perbaiki isian preset/template (Atur preset)' : 'Pilih preset atau template terlebih dahulu')
+      : noModels ? 'Pilih minimal satu model untuk benchmark' : '') : (srv.switching ? 'Model sedang diganti' : 'Model belum siap');
+    $('btnAnalyzeLabel').textContent = benchRunning ? 'Benchmark berjalan…' : busy ? 'Menganalisis…' : benchOn ? 'Jalankan benchmark' : 'Analisis';
+    $('spin').hidden = !(busy || benchRunning);
+    $('stModelSel').disabled = busy || running || srv.switching || !srv.ready;
+    $('btnExport').disabled = busy || !lastResponse || shown === 'bench';
+    $('btnReset').disabled = benchRunning;
+    modeRadios().forEach(function (r) { r.disabled = running; });
+    if (running) { $('edRun').disabled = true; $('edRun').title = 'Benchmark sedang berjalan'; }
+    // Benchmark options
+    var files = benchFiles(), k = benchSelected().length;
+    $('benchToggle').disabled = running || busy;
+    $('benchDup').disabled = running;
+    Array.prototype.forEach.call($('benchModels').querySelectorAll('input'), function (cb) { cb.disabled = running; });
+    $('benchPickCount').textContent = files.length ? k + '/' + files.length + ' dipilih' : '';
+    $('benchAll').disabled = running || k === files.length;
+    $('benchNone').disabled = running || !k;
+    var has = !!benchData && benchRunList().length > 0;
+    $('benchExport').disabled = benchRunning || !has || benchExporting;
+    $('benchCopy').disabled = !has;
   }
   function setBusy(b) {
     busy = b;
-    $('spin').hidden = !b;
-    $('btnAnalyzeLabel').textContent = b ? 'Menganalisis…' : 'Analisis';
     updateControls();
   }
   function errorFrom(res) {
@@ -1656,10 +1896,12 @@
   function reqSig(b) { var c = {}; for (var k in b) if (k !== 'texts') c[k] = b[k]; return JSON.stringify(c); }
   function analyze() {
     if (busy || !canAnalyze()) return;
+    if (benchOn && !benchSelected().length) { showError('Pilih minimal satu model untuk benchmark.'); return; }
     if (mode === 'preset' && !setReady()) { showError(draft ? 'Preset/template belum valid — perbaiki lewat “Atur preset”.' : 'Pilih preset atau template terlebih dahulu.'); return; }
     var texts = textValues().map(function (s) { return s.trim(); }).filter(Boolean);
     if (!texts.length) { showError('Isi minimal satu teks terlebih dahulu.'); return; }
     showError('');
+    if (benchOn) { runBenchmark(texts); return; }
     setBusy(true);
     var req = requestBody(texts);
     fetch('/api/score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) })
@@ -1772,7 +2014,8 @@
     return null;
   }
   // One compact question row: id on the left, the answer on the right, options in <details>.
-  function qrow(q, d) {
+  // Compact answer of a question: pill / YA-TIDAK / level boxes / winning option, plus prob.
+  function qval(q, d) {
     var id = String(q.id != null ? q.id : '?');
     var type = String(q.type || '');
     var opts = Array.isArray(q.options) ? q.options : [];
@@ -1796,6 +2039,13 @@
       val.appendChild(el('span', { class: 'q-win', title: hl, text: hl }));
       val.appendChild(el('span', { class: 'q-p', text: pct(w.prob) }));
     }
+    return val;
+  }
+  function qrow(q, d) {
+    var id = String(q.id != null ? q.id : '?');
+    var type = String(q.type || '');
+    var opts = Array.isArray(q.options) ? q.options : [];
+    var val = qval(q, d);
     var sum = el('summary', null, [icon(I_CHEV, 'chev'), el('span', { class: 'q-id', title: id, text: id }), val]);
     var meta = [type ? type.toUpperCase() : null, 'CONF ' + fix3(q.confidence), isNum(q.act) ? 'ACT ' + fix3(q.act) : null];
     if (q.headline != null && q.headline !== '') meta.push(String(q.headline));
@@ -1834,11 +2084,13 @@
   function stat(kicker, kids, cls) {
     return el('div', { class: 'stat' + (cls ? ' ' + cls : '') }, [el('span', { class: 'kicker', text: kicker })].concat(kids));
   }
-  function renderSummary(data, m) {
+  // box / device default to the main results; the benchmark detail view passes its own.
+  function renderSummary(data, m, box, device) {
     var avg = data.average || {};
     var results = data.results;
     var n = num(avg.count, results.length);
-    var box = $('summary');
+    var dv = device !== undefined ? device : srv.device;
+    box = box || $('summary');
     box.textContent = '';
 
     box.appendChild(stat('Teks', [el('span', { class: 'stat-big', text: String(n) }), el('span', { class: 'stat-sub', text: modeTitle(data) })]));
@@ -1871,7 +2123,7 @@
     var ms = data.latency_ms != null ? Math.round(num(data.latency_ms)) : null;
     box.appendChild(stat('Model · latensi', [
       el('span', { class: 'stat-model', text: String(data.model || srv.model || 'model ?') }),
-      el('span', { class: 'stat-sub', text: (ms != null ? ms + ' ms' : '– ms') + (ms != null && n ? ' · ' + Math.round(ms / n) + ' ms/teks' : '') + (srv.device ? ' · ' + srv.device : '') })
+      el('span', { class: 'stat-sub', text: (ms != null ? ms + ' ms' : '– ms') + (ms != null && n ? ' · ' + Math.round(ms / n) + ' ms/teks' : '') + (dv ? ' · ' + dv : '') })
     ], 'wide'));
 
     // Average probabilities, compact.
@@ -1885,7 +2137,7 @@
     }
     growBars(box);
   }
-  function resultCard(r, i, m) {
+  function resultCard(r, i, m, idp) {
     var text = String(r.text == null ? '' : r.text);
     var no = isNum(r.index) ? Number(r.index) + 1 : i + 1;
     var head = el('div', { class: 'rc-head' }, [el('span', { class: 'rc-no', text: '#' + (no < 10 ? '0' : '') + no })]);
@@ -1893,7 +2145,7 @@
     var sc = scoreOf(r, m);
     if (sc) head.appendChild(el('div', { class: 'rc-score' }, [el('span', { class: 'rc-num', text: sc.num }), el('span', { class: 'rc-cap', text: sc.cap })]));
 
-    var t = el('p', { class: 'txt', id: 'rct' + i, text: text });
+    var t = el('p', { class: 'txt', id: (idp || 'rct') + i, text: text });
     var more = el('button', { type: 'button', class: 'more', 'aria-controls': t.id, 'aria-expanded': 'false', text: 'selengkapnya', hidden: '' });
     more.addEventListener('click', function () {
       var o = t.classList.toggle('open');
@@ -1926,7 +2178,7 @@
   }
   // Show "selengkapnya" only for texts that are actually clamped.
   function checkClamp() {
-    Array.prototype.forEach.call(document.querySelectorAll('#rows .txt'), function (t) {
+    Array.prototype.forEach.call(document.querySelectorAll('.cards .txt'), function (t) {
       var more = t.nextElementSibling;
       if (!more || t.classList.contains('open')) return;
       more.hidden = t.scrollHeight <= t.clientHeight + 1;
@@ -1935,6 +2187,7 @@
   var clampTimer = null;
   window.addEventListener('resize', function () { clearTimeout(clampTimer); clampTimer = setTimeout(checkClamp, 150); });
   function render(data) {
+    showView('normal');
     var m = resMode(data.mode);
     var avg = data.average || {};
     $('resMeta').textContent = [
@@ -1967,6 +2220,7 @@
   // Results stay visible after a mode/preset/model change, with a note until re-run.
   function updateStale() {
     var box = $('stale'), txt = $('staleTxt');
+    if (shown === 'bench') { benchStale(box, txt); return; }
     if (!lastResponse || !lastReq) { box.hidden = true; txt.textContent = ''; return; }
     var notes = [];
     var now = requestBody([]);
@@ -1981,11 +2235,15 @@
 
   /* ---------- Reset ---------- */
   $('btnReset').addEventListener('click', function () {
-    var hasContent = textValues().some(function (s) { return s.trim(); }) || lastResponse || $('bulkText').value.trim();
+    if (benchRunning) return;
+    var hasContent = textValues().some(function (s) { return s.trim(); }) || lastResponse || benchData || $('bulkText').value.trim();
     if (hasContent && !window.confirm('Hapus semua teks dan hasil analisis?')) return;
     resetInputs();
     lastResponse = null;
     lastReq = null;
+    benchData = null;
+    showView('normal');
+    $('benchRun').hidden = true;
     $('results').hidden = true;
     $('rows').textContent = '';
     $('summary').textContent = '';
@@ -2027,6 +2285,742 @@
       })
       .catch(function (e) { showError('Export gagal: ' + ((e && e.message) || 'kesalahan jaringan')); })
       .then(function () { btn.textContent = 'Export ke Excel'; updateControls(); });
+  });
+
+  /* ---------- Benchmark (all models, one by one) ---------- */
+  // POST /api/benchmark streams NDJSON events; each model's row fills in as its event arrives.
+  // benchData = {req, sig, texts, title, startedAt, total, original, rows[], done, error}.
+  var BENCH_KEY = 'sentiment.benchmark';
+  var benchOn = false, benchExcl = {}, benchModelsKey = '', benchRunning = false, benchData = null;
+  var shown = 'normal', benchExporting = false, benchAbort = null, benchTick = null, benchTab = null, benchDetailKey = '', benchQid = '';
+  try { benchOn = window.localStorage.getItem(BENCH_KEY) === '1'; } catch (e) { /* storage unavailable */ }
+  $('benchToggle').checked = benchOn;
+  $('benchOpts').hidden = !benchOn;
+
+  var ST = {
+    wait: ['Menunggu', ''], load: ['Memuat', 'run'], score: ['Menguji', 'run'], ok: ['Selesai', 'ok'],
+    fail: ['Gagal', 'fail'], dup: ['Duplikat', 'dup'], stop: ['Dibatalkan', 'stop']
+  };
+  function benchFiles() { return srv.models.map(function (m) { return String(m.file || ''); }).filter(Boolean); }
+  function benchSelected() { return benchFiles().filter(function (f) { return !benchExcl[f]; }); }
+  function sizeText(mb) {
+    mb = Number(mb);
+    return mb != null && isFinite(mb) && mb > 0 ? (mb >= 100 ? mb.toFixed(0) : mb.toFixed(1)) + ' MB' : '';
+  }
+  function fmtMs(v) {
+    if (!isNum(v)) return '–';
+    v = Number(v);
+    return v < 1000 ? Math.round(v) + ' ms' : (v / 1000).toFixed(v < 10000 ? 2 : 1) + ' s';
+  }
+  function clock(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000)), m = Math.floor(s / 60);
+    s %= 60;
+    return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function two(n) { return (n < 9 ? '0' : '') + (n + 1); }
+
+  function renderBenchModels() {
+    var box = $('benchModels'), list = srv.models;
+    var key = list.map(function (m) { return m.file + '|' + m.size_mb + '|' + !!m.active; }).join(',');
+    if (key === benchModelsKey && box.firstChild) { updateControls(); return; }
+    benchModelsKey = key;
+    box.textContent = '';
+    if (!list.length) {
+      box.appendChild(el('span', { class: 'hint', text: srv.ready ? 'Server tidak melaporkan daftar model.' : 'Memuat daftar model…' }));
+    }
+    list.forEach(function (m) {
+      var f = String(m.file || '');
+      if (!f) return;
+      var cb = el('input', { type: 'checkbox' });
+      cb.checked = !benchExcl[f];
+      cb.addEventListener('change', function () {
+        if (cb.checked) delete benchExcl[f]; else benchExcl[f] = true;
+        updateControls();
+      });
+      var sub = [sizeText(m.size_mb), m.active ? 'aktif' : ''].filter(Boolean).join(' · ');
+      box.appendChild(el('label', { class: 'bm-m' }, [cb, el('span', { class: 'bm-f', text: f }), sub ? el('small', { text: sub }) : null]));
+    });
+    updateControls();
+  }
+  $('benchToggle').addEventListener('change', function () {
+    benchOn = $('benchToggle').checked;
+    try { window.localStorage.setItem(BENCH_KEY, benchOn ? '1' : '0'); } catch (e) { /* ignore */ }
+    $('benchOpts').hidden = !benchOn;
+    updateControls();
+  });
+  $('benchAll').addEventListener('click', function () { benchExcl = {}; benchModelsKey = ''; renderBenchModels(); });
+  $('benchNone').addEventListener('click', function () {
+    benchFiles().forEach(function (f) { benchExcl[f] = true; });
+    benchModelsKey = ''; renderBenchModels();
+  });
+
+  // Header status while a benchmark runs (from the /api/status poll).
+  function showBenchStatus(device) {
+    var b = srv.bench || {};
+    var total = num(b.total), i = num(b.index, -1);
+    var stage = BENCH_STAGE[b.stage] || String(b.stage || '');
+    var pos = total ? 'Model ' + Math.max(1, Math.min(total, i + 1)) + '/' + total : 'Benchmark';
+    showPicker(false);
+    $('stDot').className = 'dot loading';
+    $('stLive').textContent = 'BENCH';
+    $('stModel').textContent = b.stage === 'restoring' ? 'Memulihkan ' + (b.file || 'model awal') : pos + (b.file ? ' · ' + b.file : '');
+    $('stDevice').hidden = !device;
+    $('ftState').textContent = 'Benchmark';
+    $('stMsg').textContent = 'Benchmark berjalan: ' + pos + (b.file ? ' (' + b.file + ')' : '') + (stage ? ' — ' + stage : '') + '. Analisis dan ganti model dinonaktifkan sampai selesai.';
+  }
+
+  function showView(v) {
+    shown = v;
+    $('normalRes').hidden = v !== 'normal';
+    $('benchRes').hidden = v !== 'bench';
+    $('hRes').textContent = v === 'bench' ? 'Hasil benchmark' : 'Hasil analisis';
+    if (v === 'bench') $('results').hidden = false;
+    updateControls();
+  }
+
+  /* run */
+  function benchRow(i, file, size, dup) {
+    return { index: i, file: String(file || ''), size_mb: size, duplicate_of: dup || null, state: 'wait', ev: null };
+  }
+  function runBenchmark(texts) {
+    var req = requestBody(texts);
+    var sel = benchSelected();
+    var body = {};
+    for (var k in req) body[k] = req[k];
+    body.models = sel;
+    body.include_duplicates = $('benchDup').checked;
+    var sizes = {};
+    srv.models.forEach(function (m) { sizes[m.file] = m.size_mb; });
+    benchData = {
+      req: req, sig: reqSig(req), texts: texts.slice(), textsKey: JSON.stringify(texts), title: reqTitle(req, null),
+      startedAt: new Date(), t0: Date.now(), total: sel.length, original: srv.model, mode: req.mode,
+      rows: sel.map(function (f, i) { return benchRow(i, f, sizes[f], null); }), done: null, error: '', cancelling: false
+    };
+    benchTab = null; benchDetailKey = ''; benchQid = '';
+    benchRunning = true;
+    srv.bench = { running: true, index: -1, total: sel.length, file: null, stage: 'preparing' };
+    showBenchStatus(srv.device);
+    $('benchToolMsg').textContent = '';
+    $('benchRun').hidden = false;
+    $('benchCancel').hidden = false;
+    $('benchCancel').disabled = false;
+    showView('bench');
+    renderBenchAll();
+    clearInterval(benchTick);
+    benchTick = setInterval(renderBenchClock, 500);
+    schedulePoll(1000);
+
+    var ctrl = window.AbortController ? new AbortController() : null;
+    benchAbort = ctrl;
+    fetch('/api/benchmark', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      signal: ctrl ? ctrl.signal : undefined
+    })
+      .then(function (res) {
+        if (!res.ok) return errorFrom(res).then(function (m) { throw new Error(m); });
+        if (!res.body || !res.body.getReader) {
+          return res.text().then(function (t) { t.split('\n').forEach(benchLine); });
+        }
+        var reader = res.body.getReader(), dec = new TextDecoder(), buf = '';
+        function pump() {
+          return reader.read().then(function (r) {
+            if (r.done) { buf += dec.decode(); if (buf.trim()) benchLine(buf); buf = ''; return; }
+            buf += dec.decode(r.value, { stream: true });
+            var parts = buf.split('\n');
+            buf = parts.pop();
+            parts.forEach(benchLine);
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function (e) {
+        if (e && e.name === 'AbortError') benchData.error = 'Benchmark dihentikan.';
+        else benchData.error = (e && e.message) || 'Terjadi kesalahan jaringan.';
+      })
+      .then(finishBench);
+  }
+  function benchLine(line) {
+    line = String(line).trim();
+    if (!line || !benchData) return;
+    var ev;
+    try { ev = JSON.parse(line); } catch (e) { return; }
+    if (ev && typeof ev === 'object') benchEvent(ev);
+  }
+  function rowAt(ev) {
+    var rows = benchData.rows, i = num(ev.index, -1);
+    if (rows[i] && (!ev.file || rows[i].file === String(ev.file))) return rows[i];
+    for (var j = 0; j < rows.length; j++) if (rows[j].file === String(ev.file)) return rows[j];
+    if (i >= 0 && ev.file) { rows[i] = benchRow(i, ev.file, null, null); return rows[i]; }
+    return null;
+  }
+  function benchEvent(ev) {
+    var t = String(ev.type || ev.event || ''), d = benchData, r;
+    if (t === 'start') {
+      var old = {};
+      d.rows.forEach(function (x) { old[x.file] = x; });
+      if (Array.isArray(ev.models)) {
+        d.rows = ev.models.map(function (m, i) {
+          var f = String((m && m.file) || '');
+          return benchRow(i, f, m && m.size_mb != null ? m.size_mb : (old[f] || {}).size_mb, m && m.duplicate_of);
+        });
+      }
+      d.total = num(ev.total, d.rows.length);
+      if (ev.original_model) d.original = String(ev.original_model);
+      if (ev.mode) d.mode = String(ev.mode);
+      if (Array.isArray(ev.texts)) d.texts = ev.texts.map(String);
+    } else if (t === 'done') {
+      d.done = ev;
+    } else if ((r = rowAt(ev))) {
+      if (t === 'model_skipped') { r.state = 'dup'; r.duplicate_of = ev.duplicate_of || r.duplicate_of; r.ev = ev; }
+      else if (t === 'model_loading') r.state = 'load';
+      else if (t === 'model_loaded') { r.state = 'load'; r.device = ev.device; r.load_ms = ev.load_ms; }
+      else if (t === 'model_scoring') r.state = 'score';
+      else if (t === 'model_result') {
+        var res = ev.result && Array.isArray(ev.result.results) ? ev.result : null;
+        r.state = res ? 'ok' : 'fail';
+        r.device = ev.device || r.device; r.load_ms = ev.load_ms; r.score_ms = ev.score_ms; r.ms_per_text = ev.ms_per_text;
+        r.result = res;
+        if (!res) r.error = 'Respons model tidak valid.';
+        r.ev = ev;
+      } else if (t === 'model_error') { r.state = 'fail'; r.stage = ev.stage; r.error = String(ev.error || 'Gagal.'); r.ev = ev; }
+      if (t !== 'model_skipped' && t !== 'model_result' && t !== 'model_error') {
+        srv.bench = { running: true, index: r.index, total: d.total, file: r.file, stage: t === 'model_scoring' ? 'scoring' : 'loading' };
+        showBenchStatus(r.device || null);
+      }
+    }
+    renderBenchAll();
+  }
+  function finishBench() {
+    var d = benchData;
+    clearInterval(benchTick);
+    benchRunning = false;
+    benchAbort = null;
+    if (!d) { srv.bench = null; pollStatus(); return; }
+    d.elapsed = d.done && isNum(d.done.total_ms) ? Number(d.done.total_ms) : Date.now() - d.t0;
+    var cancelled = !!(d.done && d.done.cancelled) || (!d.done && d.cancelling);
+    d.rows.forEach(function (r) { if (r.state === 'wait' || r.state === 'load' || r.state === 'score') r.state = 'stop'; });
+    d.cancelled = cancelled;
+    if (!d.done && !d.error) d.error = 'Aliran benchmark terputus sebelum selesai.';
+    srv.bench = null;
+    $('benchCancel').hidden = true;
+    renderBenchAll();
+    pollStatus(); // header, picker and model are back to normal once the server has restored the model
+  }
+  $('benchCancel').addEventListener('click', function () {
+    if (!benchRunning || !benchData) return;
+    benchData.cancelling = true;
+    $('benchCancel').disabled = true;
+    renderBenchProgress();
+    fetch('/api/benchmark/cancel', { method: 'POST' })
+      .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); })
+      .catch(function () { if (benchAbort) benchAbort.abort(); }); // closing the stream also cancels
+  });
+
+  /* progress panel */
+  function processed(d) { return d.rows.filter(function (r) { return r.state === 'ok' || r.state === 'fail' || r.state === 'dup'; }).length; }
+  function renderBenchClock() {
+    if (!benchData) return;
+    $('benchTime').textContent = clock(benchData.elapsed != null ? benchData.elapsed : Date.now() - benchData.t0);
+  }
+  function chip(r) {
+    var s = ST[r.state] || ST.wait;
+    var c = el('span', { class: 'sc ' + s[1], title: r.error || '' });
+    if (r.state === 'load' || r.state === 'score') c.appendChild(el('span', { class: 'spinner', 'aria-hidden': 'true' }));
+    if (r.state === 'dup') {
+      c.appendChild(el('b', { text: s[0] }));
+      c.appendChild(el('span', { text: '= ' + (r.duplicate_of || '?') }));
+    } else c.appendChild(el('span', { text: s[0] }));
+    return c;
+  }
+  function renderBenchProgress() {
+    var d = benchData;
+    if (!d) return;
+    var n = d.rows.length || d.total, done = processed(d);
+    var active = d.rows.filter(function (r) { return r.state === 'load' || r.state === 'score'; })[0];
+    var pos = benchRunning ? (active ? active.index + 1 : Math.min(n, done + (d.done ? 0 : 1))) : done;
+    var head;
+    if (benchRunning) head = d.cancelling ? 'Membatalkan…' : 'Benchmark berjalan';
+    else head = d.cancelled ? 'Benchmark dibatalkan' : d.error && !d.done ? 'Benchmark terhenti' : 'Benchmark selesai';
+    $('benchRunTitle').textContent = head;
+    $('benchCount').textContent = 'Model ' + (n ? Math.max(benchRunning ? 1 : 0, pos) : 0) + '/' + n;
+    var p = n ? Math.round(done / n * 100) : 0;
+    $('benchBar').style.width = p + '%';
+    $('benchMeter').setAttribute('aria-valuenow', String(p));
+    renderBenchClock();
+    var msg = '';
+    if (benchRunning && d.cancelling) msg = 'Membatalkan… langkah yang sedang berjalan diselesaikan dulu, lalu model awal dimuat ulang.';
+    else if (benchRunning && !active && !done) msg = 'Menyiapkan benchmark (memeriksa file duplikat)…';
+    else if (!benchRunning) {
+      var parts = [];
+      if (d.error) parts.push(d.error);
+      if (d.done && d.done.error) parts.push(String(d.done.error));
+      else if (d.done && d.done.restored_model) parts.push('Model awal ' + d.done.restored_model + ' dimuat kembali.');
+      msg = parts.join(' ');
+    }
+    $('benchMsg').textContent = msg;
+    $('benchMsg').hidden = !msg;
+    var list = $('benchList');
+    list.textContent = '';
+    d.rows.forEach(function (r) {
+      var live = r.state === 'load' || r.state === 'score';
+      var ms = el('span', { class: 'bm-ms' });
+      ms.appendChild(document.createTextNode('muat '));
+      ms.appendChild(el('b', { text: fmtMs(r.load_ms) }));
+      ms.appendChild(document.createTextNode(' · uji '));
+      ms.appendChild(el('b', { text: fmtMs(r.score_ms) }));
+      list.appendChild(el('li', { class: 'bm-li' + (live ? ' on' : '') }, [
+        el('span', { class: 'bm-no', text: two(r.index) }),
+        el('span', { class: 'bm-file' }, [
+          live ? el('span', { class: 'dot ready', 'aria-label': 'aktif' }) : null,
+          el('span', { class: 'n', title: r.file, text: r.file }),
+          sizeText(r.size_mb) ? el('span', { class: 'bm-size', text: sizeText(r.size_mb) }) : null
+        ]),
+        el('span', { class: 'bm-li-r' }, [chip(r), r.state === 'dup' ? null : ms])
+      ]));
+    });
+  }
+
+  /* comparison helpers */
+  function okRows(d) { return d.rows.filter(function (r) { return r.state === 'ok' && r.result; }); }
+  function benchMode(d) { return resMode(d.mode || (d.req && d.req.mode)); }
+  function resultAt(r, i) { return (r.result.results[i] || null); }
+  function questionIds(d) {
+    var ids = [], seen = {};
+    okRows(d).forEach(function (r) {
+      r.result.results.forEach(function (x) {
+        questionsOf(x || {}, 'preset').forEach(function (q) { var id = String(q.id); if (!seen[id]) { seen[id] = true; ids.push(id); } });
+      });
+    });
+    return ids;
+  }
+  function findQ(x, qid) { return questionsOf(x || {}, 'preset').filter(function (q) { return String(q.id) === qid; })[0] || null; }
+  // Comparable answer of one model for text i: the label (sentiment modes) or the question's winner.
+  function answerKey(r, i, m, qid) {
+    var x = resultAt(r, i);
+    if (!x) return null;
+    if (m !== 'preset') return x.label != null ? normLabel(x.label) : null;
+    var q = findQ(x, qid);
+    if (!q) return null;
+    if (qid === 'sentiment') return sentLabelOf(q, x.label != null ? x : null);
+    var opts = Array.isArray(q.options) ? q.options : [];
+    var w = opts[winnerIndex(opts, q.winner)];
+    return w ? optKey(w) : (q.winner != null ? String(q.winner) : null);
+  }
+  // Majority over OK models (ties: first model in benchmark order wins, flagged as tie).
+  function majority(rows, i, m, qid) {
+    var votes = {}, order = [], n = 0;
+    rows.forEach(function (r) {
+      var k = answerKey(r, i, m, qid);
+      if (k == null) return;
+      n++;
+      if (!votes.hasOwnProperty(k)) { votes[k] = 0; order.push(k); }
+      votes[k]++;
+    });
+    var best = null;
+    order.forEach(function (k) { if (best === null || votes[k] > votes[best]) best = k; });
+    var tie = best !== null && order.filter(function (k) { return votes[k] === votes[best]; }).length > 1;
+    return { key: best, votes: best === null ? 0 : votes[best], n: n, tie: tie };
+  }
+  function textCount(d) {
+    var n = d.texts.length;
+    okRows(d).forEach(function (r) { n = Math.max(n, r.result.results.length); });
+    return n;
+  }
+  // Per model: share of (text, question) answers equal to the majority; null with < 2 OK models.
+  function agreement(d) {
+    var rows = okRows(d), m = benchMode(d), out = {};
+    if (rows.length < 2) return out;
+    var qids = m === 'preset' ? questionIds(d) : [null], n = textCount(d);
+    var maj = [];
+    for (var i = 0; i < n; i++) maj[i] = qids.map(function (q) { return majority(rows, i, m, q).key; });
+    rows.forEach(function (r) {
+      var hit = 0, tot = 0;
+      for (var i = 0; i < n; i++) {
+        qids.forEach(function (q, j) {
+          var a = answerKey(r, i, m, q);
+          if (a == null || maj[i][j] == null) return;
+          tot++;
+          if (a === maj[i][j]) hit++;
+        });
+      }
+      out[r.file] = tot ? hit / tot : null;
+    });
+    return out;
+  }
+  function labelCounts(res) {
+    var c = { positive: 0, neutral: 0, negative: 0 }, n = 0;
+    res.results.forEach(function (x) { if (x && x.label != null) { c[normLabel(x.label)]++; n++; } });
+    return { c: c, n: n };
+  }
+  function highlights(d) {
+    var rows = okRows(d), ag = agreement(d), fast = null, best = null;
+    if (rows.length >= 2) {
+      rows.forEach(function (r) { if (isNum(r.ms_per_text) && (!fast || Number(r.ms_per_text) < Number(fast.ms_per_text))) fast = r; });
+      var vals = rows.map(function (r) { return ag[r.file]; }).filter(isNum);
+      var hi = Math.max.apply(null, vals), lo = Math.min.apply(null, vals);
+      if (vals.length && hi > lo) best = rows.filter(function (r) { return ag[r.file] === hi; });
+    }
+    return { ag: ag, fast: fast, best: best || [] };
+  }
+
+  /* a) summary */
+  var SUM_COLS = ['Model · status · device', 'Muat', 'Uji', 'ms/teks', 'Rata-rata', 'Distribusi label', 'Kesepakatan'];
+  function cell(cls, k, kids) { return el('div', { class: cls, role: 'cell' }, [el('span', { class: 'bm-k', text: k })].concat(kids)); }
+  function renderBenchSummary() {
+    var d = benchData, m = benchMode(d), box = $('benchSum'), h = highlights(d);
+    box.textContent = '';
+    box.appendChild(el('div', { class: 'bm-r bm-hd', role: 'row' }, SUM_COLS.map(function (c) { return el('span', { role: 'columnheader', text: c }); })));
+    d.rows.forEach(function (r) {
+      var sub = el('span', { class: 'bm-sub' }, [chip(r)]);
+      if (r.device) sub.appendChild(el('span', { text: String(r.device) }));
+      if (sizeText(r.size_mb)) sub.appendChild(el('span', { text: sizeText(r.size_mb) }));
+      var name = el('span', { class: 'bm-mh' }, [el('span', { class: 'bm-no', text: two(r.index) }), el('span', { class: 'bm-name', text: r.file })]);
+      var tags = el('span', { class: 'bm-sub' });
+      if (h.fast === r) tags.appendChild(el('span', { class: 'bm-tag', text: '⚡ Tercepat' }));
+      if (h.best.indexOf(r) >= 0) tags.appendChild(el('span', { class: 'bm-tag', text: '✓ Paling sepakat' }));
+      var model = el('div', { class: 'c-model', role: 'rowheader' }, [name, sub, tags.firstChild ? tags : null]);
+      var live = r.state === 'load' || r.state === 'score';
+      var row = el('div', { class: 'bm-r' + (live ? ' live' : ''), role: 'row' }, [model]);
+      if (r.state === 'ok') {
+        var res = r.result, sc = scoreOf(res.average || {}, m);
+        row.appendChild(cell('', 'Muat', [el('span', { class: 'bm-v', text: fmtMs(r.load_ms) })]));
+        row.appendChild(cell('', 'Uji', [el('span', { class: 'bm-v', text: fmtMs(r.score_ms) })]));
+        row.appendChild(cell('', 'ms/teks', [el('span', { class: 'bm-v', text: isNum(r.ms_per_text) ? Math.round(Number(r.ms_per_text)) + ' ms' : '–' })]));
+        row.appendChild(cell('c-avg', 'Rata-rata', sc
+          ? [el('span', { class: 'bm-big', text: sc.num }), el('span', { class: 'bm-cap', text: sc.cap })]
+          : [el('span', { class: 'stat-na', text: 'Tanpa sentimen' })]));
+        var lc = labelCounts(res), dist;
+        if (lc.n) {
+          dist = [el('div', { class: 'dist sm', role: 'img', 'aria-label': ['positive', 'neutral', 'negative'].map(function (k) { return LABELS[k] + ' ' + lc.c[k]; }).join(', ') },
+            ['positive', 'neutral', 'negative'].map(function (k) { return el('span', { class: 'fill-' + k, style: 'width: ' + (lc.c[k] / lc.n * 100) + '%' }); })),
+          el('div', { class: 'legend sm' }, ['positive', 'neutral', 'negative'].map(function (k) {
+            return el('span', null, [el('i', { class: 'fill-' + k }), el('span', { text: LABELS[k] }), el('b', { text: String(lc.c[k]) })]);
+          }))];
+        } else dist = [el('span', { class: 'stat-na', text: 'Tanpa sentimen' })];
+        row.appendChild(cell('c-dist', 'Distribusi label', dist));
+        var a = h.ag[r.file];
+        row.appendChild(cell('', 'Kesepakatan', [el('span', { class: 'bm-agree' }, [el('span', { class: 'bm-big', text: isNum(a) ? Math.round(a * 100) + '%' : '–' })]),
+          el('span', { class: 'bm-cap', text: isNum(a) ? 'dgn mayoritas' : 'butuh ≥ 2 model' })]));
+      } else {
+        var note, cls = 'c-note dim';
+        if (r.state === 'fail') { note = (r.stage === 'load' ? 'Gagal dimuat: ' : r.stage === 'score' ? 'Gagal saat menguji: ' : 'Gagal: ') + (r.error || ''); cls = 'c-note err'; }
+        else if (r.state === 'dup') note = 'Duplikat dari ' + (r.duplicate_of || '?') + ' — dilewati (isi file identik).';
+        else if (r.state === 'load') note = 'Sedang memuat model…' + (isNum(r.load_ms) ? '' : '');
+        else if (r.state === 'score') note = 'Model dimuat dalam ' + fmtMs(r.load_ms) + ', sedang menguji ' + d.texts.length + ' teks…';
+        else if (r.state === 'stop') note = 'Tidak diuji — benchmark dibatalkan atau terhenti.';
+        else note = 'Menunggu giliran.';
+        row.classList.add('pending');
+        row.appendChild(el('div', { class: cls, role: 'cell', text: note }));
+      }
+      box.appendChild(row);
+    });
+    var ok = okRows(d).length;
+    $('benchSumNote').textContent = ok >= 2
+      ? 'Kesepakatan = persentase ' + (m === 'preset' ? 'jawaban (per teks × pertanyaan)' : 'teks') + ' yang labelnya sama dengan mayoritas model yang berhasil. Seri dimenangkan model yang lebih dulu diuji.'
+      : 'Kesepakatan dihitung setelah minimal dua model selesai diuji.';
+  }
+
+  /* b) per-text matrix */
+  function renderBenchMatrix() {
+    var d = benchData, m = benchMode(d), rows = okRows(d), box = $('benchMx');
+    box.textContent = '';
+    var qids = m === 'preset' ? questionIds(d) : [];
+    var qsel = $('benchQ');
+    $('benchQBar').hidden = m !== 'preset' || !qids.length;
+    if (m === 'preset') {
+      if (qids.indexOf(benchQid) < 0) benchQid = qids.indexOf('sentiment') >= 0 && qids.length > 1 ? qids.filter(function (q) { return q !== 'sentiment'; })[0] : (qids[0] || '');
+      var key = qids.join('|');
+      if (qsel.getAttribute('data-k') !== key) {
+        qsel.textContent = '';
+        qids.forEach(function (q) { qsel.appendChild(el('option', { value: q, text: q })); });
+        qsel.setAttribute('data-k', key);
+      }
+      qsel.value = benchQid;
+    }
+    if (!rows.length) {
+      box.appendChild(el('div', { class: 'bm-empty', text: benchRunning ? 'Matriks muncul setelah model pertama selesai diuji.' : 'Tidak ada model yang berhasil diuji.' }));
+      return;
+    }
+    var qid = m === 'preset' ? benchQid : null;
+    var hr = el('tr', null, [el('th', { class: 'stk', scope: 'col', text: 'Teks' })]);
+    rows.forEach(function (r) {
+      hr.appendChild(el('th', { scope: 'col' }, [el('span', { class: 'bm-no', text: two(r.index) }), el('span', { class: 'bm-th-f', text: r.file })]));
+    });
+    if (rows.length >= 2) hr.appendChild(el('th', { class: 'maj', scope: 'col', text: 'Mayoritas' }));
+    var tb = el('tbody'), n = textCount(d), off = 0;
+    for (var i = 0; i < n; i++) {
+      var txt = d.texts[i] != null ? d.texts[i] : String((resultAt(rows[0], i) || {}).text || '');
+      var tr = el('tr', null, [el('th', { class: 'stk', scope: 'row' }, [el('span', { class: 'rc-no', text: '#' + two(i) }), el('p', { class: 'bm-tx', title: txt, text: txt })])]);
+      var mj = majority(rows, i, m, qid);
+      var majCell = null;
+      rows.forEach(function (r) {
+        var x = resultAt(r, i), td = el('td');
+        var k = answerKey(r, i, m, qid);
+        if (!x) td.appendChild(el('span', { class: 'hint', text: '–' }));
+        else if (m !== 'preset') {
+          var sc = scoreOf(x, m);
+          td.appendChild(el('div', { class: 'bm-cv' }, [x.label != null ? pill(x.label) : null, sc ? el('span', { class: 'bm-cs', text: sc.num }) : null]));
+          if (!majCell && k === mj.key) majCell = x.label != null ? pill(x.label) : null;
+        } else {
+          var q = findQ(x, qid);
+          if (!q) td.appendChild(el('span', { class: 'hint', text: '–' }));
+          else {
+            var cv = el('div', { class: 'bm-cv' }, [qval(q, x.label != null ? x : null)]);
+            if (q.type === 'score' && isNum(q.headline)) cv.appendChild(el('span', { class: 'bm-cs', title: 'Level harapan (headline)', text: '≈ ' + (Number(q.headline) + 1).toFixed(2) }));
+            td.appendChild(cv);
+            if (!majCell && k === mj.key) majCell = qid === 'sentiment' ? pill(k) : qval(q, x.label != null ? x : null);
+          }
+        }
+        if (rows.length >= 2 && k != null && mj.key != null && k !== mj.key) {
+          td.className = 'off';
+          td.title = 'Berbeda dari mayoritas';
+          off++;
+        }
+        tr.appendChild(td);
+      });
+      if (rows.length >= 2) {
+        tr.appendChild(el('td', { class: 'maj' }, [el('div', { class: 'bm-cv' }, [majCell,
+          el('span', { class: 'bm-cs', text: mj.votes + '/' + mj.n + ' model' + (mj.tie ? ' · seri' : '') })])]));
+      }
+      tb.appendChild(tr);
+    }
+    var wrap = el('div', { class: 'bm-scroll', tabindex: '0', role: 'region', 'aria-label': 'Matriks perbandingan per teks (geser ke samping)' },
+      [el('table', { class: 'bm-mx' }, [el('thead', null, [hr]), tb])]);
+    box.appendChild(wrap);
+    growBars(wrap);
+    if (rows.length >= 2) {
+      box.appendChild(el('div', { class: 'bm-legend' }, [
+        el('span', null, [el('i'), el('span', { text: 'Berbeda dari mayoritas (' + off + ' sel)' })]),
+        el('span', { text: m === 'preset' ? 'Pertanyaan: ' + qid : 'Label + skor per model' })
+      ]));
+    }
+  }
+  $('benchQ').addEventListener('change', function () { benchQid = $('benchQ').value; renderBenchMatrix(); });
+
+  /* c) detail per model */
+  function renderBenchDetail() {
+    var d = benchData, m = benchMode(d), rows = okRows(d), tabs = $('benchTabs');
+    if (!rows.some(function (r) { return r.file === benchTab; })) benchTab = rows.length ? rows[0].file : null;
+    var key = rows.map(function (r) { return r.file; }).join('|') + '#' + benchTab;
+    if (key === benchDetailKey) return;
+    var sameTab = benchDetailKey.split('#')[1] === benchTab;
+    benchDetailKey = key;
+    tabs.textContent = '';
+    rows.forEach(function (r) {
+      var sel = r.file === benchTab;
+      var b = el('button', { type: 'button', role: 'tab', 'aria-selected': String(sel), tabindex: sel ? '0' : '-1', title: r.file },
+        [el('span', { class: 'bm-no', text: two(r.index) }), el('span', { class: 'n', text: r.file })]);
+      b.addEventListener('click', function () { benchTab = r.file; renderBenchDetail(); });
+      b.addEventListener('keydown', function (e) {
+        var i = rows.indexOf(r), j = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : null;
+        if (j == null) return;
+        e.preventDefault();
+        j = (j + rows.length) % rows.length;
+        benchTab = rows[j].file;
+        renderBenchDetail();
+        var t = tabs.querySelectorAll('button')[j];
+        if (t) { t.focus(); t.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+      });
+      tabs.appendChild(b);
+    });
+    tabs.hidden = !rows.length;
+    var r = rows.filter(function (x) { return x.file === benchTab; })[0];
+    $('benchDetail').hidden = !r;
+    if (!r || sameTab && $('benchDRows').firstChild) return;
+    var res = r.result;
+    $('benchDMeta').textContent = [r.file, r.device, 'muat ' + fmtMs(r.load_ms), 'uji ' + fmtMs(r.score_ms),
+      isNum(r.ms_per_text) ? Math.round(Number(r.ms_per_text)) + ' ms/teks' : null].filter(Boolean).join(' · ');
+    var data = { mode: res.mode, model: res.model || r.file, results: res.results, average: res.average, latency_ms: res.latency_ms,
+      preset: res.preset, preset_title: res.preset_title, template_id: res.template_id, template_title: res.template_title };
+    renderSummary(data, m, $('benchDSum'), r.device || null);
+    $('benchDHead').textContent = m === 'preset' ? 'Hasil per teks · ' + questionsOf(res.results[0] || {}, m).length + ' pertanyaan' : 'Hasil per teks';
+    var list = $('benchDRows');
+    list.textContent = '';
+    list.classList.toggle('many', m === 'preset');
+    res.results.forEach(function (x, i) { list.appendChild(resultCard(x || {}, i, m, 'bdt')); });
+    growBars(list);
+    checkClamp();
+  }
+
+  function renderBenchAll() {
+    var d = benchData;
+    if (!d) return;
+    renderBenchProgress();
+    var ok = okRows(d).length, fail = 0, dup = 0;
+    d.rows.forEach(function (r) { if (r.state === 'fail') fail++; else if (r.state === 'dup') dup++; });
+    $('resMeta').textContent = ['Benchmark', benchTitle(d), d.texts.length + ' teks', d.rows.length + ' model',
+      ok + ' OK' + (fail ? ' · ' + fail + ' gagal' : '') + (dup ? ' · ' + dup + ' duplikat' : '')].join(' · ');
+    renderBenchSummary();
+    renderBenchMatrix();
+    renderBenchDetail();
+    updateStale();
+    updateControls();
+  }
+  function benchTitle(d) {
+    var r0 = okRows(d)[0], res = r0 ? r0.result : null, m = d.mode || d.req.mode;
+    if (res) return modeTitle(res);
+    if (m === 'custom') return String((d.req.template && d.req.template.title) || 'Template kustom');
+    if (m === 'preset') { var p = findPreset(d.req.preset); return String((p && p.title) || d.req.preset || MODES.preset.name); }
+    return MODES[modeOf(m)].name;
+  }
+  // Benchmark results go stale only on text or mode/preset edits (the model is restored afterwards).
+  function benchStale(box, txt) {
+    var d = benchData;
+    if (!d || benchRunning) { box.hidden = true; txt.textContent = ''; return; }
+    var notes = [], now = requestBody([]);
+    if (reqSig(now) !== d.sig) {
+      var nt = reqTitle(now, null);
+      notes.push(d.title + (nt !== d.title ? ' (sekarang: ' + nt + ')' : ' (sudah diubah)'));
+    }
+    var cur = textValues().map(function (s) { return s.trim(); }).filter(Boolean);
+    if (JSON.stringify(cur) !== d.textsKey) notes.push('teks yang sudah diubah');
+    box.hidden = !notes.length;
+    txt.textContent = notes.length ? 'Benchmark ini dari ' + notes.join(' dan ') + '. Jalankan benchmark lagi untuk memperbarui.' : '';
+  }
+
+  /* export + copy */
+  function benchRunList() {
+    if (!benchData) return [];
+    return benchData.rows.filter(function (r) { return r.ev && (r.state === 'ok' || r.state === 'fail' || r.state === 'dup'); }).map(function (r) {
+      var e = {};
+      for (var k in r.ev) e[k] = r.ev[k];
+      if (!e.type) e.type = r.state === 'ok' ? 'model_result' : r.state === 'fail' ? 'model_error' : 'model_skipped';
+      return e;
+    });
+  }
+  $('benchExport').addEventListener('click', function () {
+    var d = benchData;
+    if (!d || benchRunning || benchExporting) return;
+    var r0 = okRows(d)[0], res = r0 ? r0.result : {};
+    var body = { mode: d.mode || d.req.mode, texts: d.texts, runs: benchRunList() };
+    if (d.req.preset) { body.preset = d.req.preset; body.preset_title = res.preset_title || benchTitle(d); }
+    if (d.req.mode === 'custom') {
+      body.template_id = res.template_id || (d.req.template && d.req.template.id) || undefined;
+      body.template_title = res.template_title || (d.req.template && d.req.template.title) || undefined;
+    }
+    var btn = $('benchExport');
+    benchExporting = true;
+    btn.textContent = 'Mengekspor…';
+    $('benchToolMsg').textContent = '';
+    updateControls();
+    fetch('/api/benchmark/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (res) {
+        if (!res.ok) return errorFrom(res).then(function (m) { throw new Error(m); });
+        var name = filenameFrom(res.headers.get('Content-Disposition')) || 'benchmark-' + body.mode + '.xlsx';
+        return res.blob().then(function (b) { return { blob: b, name: name }; });
+      })
+      .then(function (x) {
+        var url = URL.createObjectURL(x.blob);
+        var a = el('a', { href: url, download: x.name });
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+        $('benchToolMsg').textContent = 'Diunduh: ' + x.name;
+      })
+      .catch(function (e) { $('benchToolMsg').textContent = 'Export gagal: ' + ((e && e.message) || 'kesalahan jaringan'); })
+      .then(function () { benchExporting = false; btn.textContent = 'Export benchmark ke Excel'; updateControls(); });
+  });
+  function mdCell(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim(); }
+  function mdTable(head, rows) {
+    return ['| ' + head.map(mdCell).join(' | ') + ' |', '|' + head.map(function () { return ' --- '; }).join('|') + '|']
+      .concat(rows.map(function (r) { return '| ' + r.map(mdCell).join(' | ') + ' |'; })).join('\n');
+  }
+  function stamp(dt) {
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return dt.getFullYear() + '-' + p(dt.getMonth() + 1) + '-' + p(dt.getDate()) + ' ' + p(dt.getHours()) + ':' + p(dt.getMinutes());
+  }
+  function answerText(r, i, m, qid) {
+    var x = resultAt(r, i);
+    if (!x) return '–';
+    if (m !== 'preset') { var sc = scoreOf(x, m); return (x.label != null ? LABELS[normLabel(x.label)] : '–') + (sc ? ' ' + sc.num : ''); }
+    var q = findQ(x, qid);
+    if (!q) return '–';
+    if (qid === 'sentiment') return LABELS[sentLabelOf(q, x.label != null ? x : null)];
+    var opts = Array.isArray(q.options) ? q.options : [], w = opts[winnerIndex(opts, q.winner)] || {};
+    if (q.type === 'noul') return (optKey(w) === 'true' ? 'Ya' : 'Tidak') + ' ' + pct(w.prob);
+    if (q.type === 'score') return 'Level ' + (winnerIndex(opts, q.winner) + 1) + '/' + opts.length;
+    return optText(w) + ' ' + pct(w.prob);
+  }
+  function benchReport() {
+    var d = benchData, m = benchMode(d), rows = okRows(d), h = highlights(d), qid = m === 'preset' ? benchQid : null;
+    var mk = d.mode || d.req.mode, fail = d.rows.filter(function (r) { return r.state === 'fail'; }), dup = d.rows.filter(function (r) { return r.state === 'dup'; });
+    var L = [];
+    L.push('# Laporan benchmark model');
+    L.push('');
+    L.push('- Tanggal: ' + stamp(d.startedAt));
+    L.push('- Mode: ' + (MODES[resMode(mk)] ? MODES[resMode(mk)].name : mk) + ' (' + mk + ')');
+    if (m === 'preset') L.push('- Preset/template: ' + benchTitle(d));
+    L.push('- Jumlah teks: ' + d.texts.length);
+    L.push('- Model: ' + d.rows.length + ' (' + rows.length + ' OK, ' + fail.length + ' gagal, ' + dup.length + ' duplikat' +
+      (d.rows.length - rows.length - fail.length - dup.length ? ', ' + (d.rows.length - rows.length - fail.length - dup.length) + ' tidak diuji' : '') + ')');
+    if (d.elapsed != null) L.push('- Total waktu: ' + fmtMs(d.elapsed) + (d.cancelled ? ' (dibatalkan)' : ''));
+    L.push('');
+    L.push('## Ringkasan per model');
+    L.push('');
+    L.push(mdTable(['Model', 'Status', 'Rata-rata', 'Distribusi', 'ms/teks', 'Kesepakatan'], d.rows.map(function (r) {
+      if (r.state !== 'ok') {
+        var st = r.state === 'fail' ? 'Gagal (' + (r.stage === 'load' ? 'muat' : r.stage === 'score' ? 'uji' : '?') + '): ' + (r.error || '') : r.state === 'dup' ? 'Duplikat dari ' + (r.duplicate_of || '?') : (ST[r.state] || ST.wait)[0];
+        return [r.file, st, '–', '–', '–', '–'];
+      }
+      var sc = scoreOf(r.result.average || {}, m), lc = labelCounts(r.result), a = h.ag[r.file];
+      return [r.file, 'OK' + (r.device ? ' · ' + r.device : ''), sc ? sc.num : '–',
+        lc.n ? 'Pos ' + lc.c.positive + ' / Net ' + lc.c.neutral + ' / Neg ' + lc.c.negative : '–',
+        isNum(r.ms_per_text) ? String(Math.round(Number(r.ms_per_text))) : '–', isNum(a) ? Math.round(a * 100) + '%' : '–'];
+    })));
+    if (rows.length) {
+      L.push('');
+      L.push('## Per teks' + (qid ? ' — pertanyaan: ' + qid : ''));
+      L.push('');
+      var head = ['#', 'Teks'].concat(rows.map(function (r) { return r.file; }));
+      if (rows.length >= 2) head.push('Mayoritas');
+      var body = [];
+      for (var i = 0; i < textCount(d); i++) {
+        var t = String(d.texts[i] != null ? d.texts[i] : '');
+        var line = [String(i + 1), t.length > 80 ? t.slice(0, 77) + '…' : t].concat(rows.map(function (r) { return answerText(r, i, m, qid); }));
+        if (rows.length >= 2) {
+          var mj = majority(rows, i, m, qid), src = rows.filter(function (r) { return answerKey(r, i, m, qid) === mj.key; })[0];
+          line.push((src ? answerText(src, i, m, qid).replace(/\s[+−\-]?[\d.,]+%?$/, '') : '–') + ' (' + mj.votes + '/' + mj.n + (mj.tie ? ', seri' : '') + ')');
+        }
+        body.push(line);
+      }
+      L.push(mdTable(head, body));
+    }
+    L.push('');
+    L.push('## Catatan');
+    L.push('');
+    var notes = [];
+    if (h.fast) notes.push('Model tercepat adalah ' + h.fast.file + ' dengan ' + Math.round(Number(h.fast.ms_per_text)) + ' ms per teks.');
+    else if (rows.length === 1) notes.push('Hanya ' + rows[0].file + ' yang berhasil diuji (' + (isNum(rows[0].ms_per_text) ? Math.round(Number(rows[0].ms_per_text)) + ' ms per teks' : 'tanpa waktu') + '), jadi tidak ada perbandingan.');
+    else if (!rows.length) notes.push('Tidak ada model yang berhasil diuji.');
+    if (h.best.length) notes.push('Kesepakatan tertinggi dengan mayoritas: ' + h.best.map(function (r) { return r.file; }).join(', ') + ' (' + Math.round(h.ag[h.best[0].file] * 100) + '%).');
+    else if (rows.length >= 2) notes.push('Semua model yang berhasil memiliki tingkat kesepakatan yang sama (' + (isNum(h.ag[rows[0].file]) ? Math.round(h.ag[rows[0].file] * 100) + '%' : '–') + ').');
+    var fd = [];
+    if (fail.length) fd.push(fail.length + ' model gagal (' + fail.map(function (r) { return r.file + (r.stage === 'load' ? ' saat dimuat' : r.stage === 'score' ? ' saat menguji' : ''); }).join(', ') + ')');
+    if (dup.length) fd.push(dup.length + ' file duplikat dilewati (' + dup.map(function (r) { return r.file + ' = ' + (r.duplicate_of || '?'); }).join(', ') + ')');
+    if (fd.length) notes.push(fd.join('; ') + '.');
+    if (d.cancelled) notes.push('Benchmark dibatalkan sebelum semua model selesai.');
+    notes.forEach(function (n) { L.push('- ' + n); });
+    return L.join('\n') + '\n';
+  }
+  $('benchCopy').addEventListener('click', function () {
+    if (!benchData) return;
+    var text = benchReport();
+    copyText(text).then(function () { $('benchToolMsg').textContent = 'Ringkasan disalin ke clipboard (format Markdown).'; },
+      function () {
+        // Fallback: show the report in a selectable textarea.
+        var ta = el('textarea', { rows: '12', class: 'mono', 'aria-label': 'Ringkasan benchmark', readonly: '' });
+        ta.value = text;
+        var msg = $('benchToolMsg');
+        msg.textContent = 'Tidak bisa menyalin otomatis — salin manual dari kotak di bawah.';
+        var old = $('benchCopyBox');
+        if (old) old.remove();
+        var box = el('div', { id: 'benchCopyBox', style: 'flex-basis:100%' }, [ta]);
+        msg.parentNode.appendChild(box);
+        ta.focus();
+        ta.select();
+      });
   });
 
   /* ---------- Theme, scroll progress, back to top ---------- */

@@ -1,7 +1,7 @@
 # public/
 
 > Status: Draft
-> Terakhir diperbarui: 2026-09-28
+> Terakhir diperbarui: 2026-09-29
 > Pemilik: _TBD_
 
 Folder ini berisi frontend aplikasi: satu berkas `index.html` yang disajikan statis oleh `server.js` (`express.static`).
@@ -21,8 +21,11 @@ Tema terang/gelap diatur tombol di header dan disimpan di `localStorage.theme`. 
 | Preset / Template | Pilihan template atau preset Laya, opsi sertakan sentimen, tombol editor |
 | Editor | Builder pertanyaan, Raw JSON, `extra_state`, Uji, Simpan, Salin JSON, Reset, Hapus |
 | Input teks | Kotak teks dinamis dan tempel massal |
+| Benchmark | Sakelar "Bandingkan semua model (benchmark)" di panel Mode (disimpan di `localStorage['sentiment.benchmark']`), daftar model yang diuji (default semua), opsi "Sertakan file duplikat" |
+| Progres benchmark | Satu baris per model (status Menunggu/Memuat/Menguji/Selesai/Gagal/Duplikat, waktu muat dan uji, titik live), bilah "Model i/N", waktu berjalan, tombol Batalkan |
 | Hasil | Ringkasan (jumlah teks, skor rata-rata, distribusi label, model dan latensi, rata-rata probabilitas atau per pertanyaan), kartu per teks (label, skor, probabilitas, pertanyaan dalam baris yang bisa dibuka), peringatan hasil kedaluwarsa |
-| Aksi | Analisis (`Ctrl + Enter`), Reset, Ekspor Excel |
+| Hasil benchmark | Menggantikan hasil biasa: ringkasan per model (device, muat, uji, ms/teks, rata-rata, distribusi label, kesepakatan dengan mayoritas; tanda tercepat dan paling sepakat), matriks per teks (kolom sticky, gulir horizontal sendiri; pemilih pertanyaan untuk preset/template), tab detail per model, Export benchmark ke Excel, Salin ringkasan (Markdown) |
+| Aksi | Analisis / Jalankan benchmark (`Ctrl + Enter`), Reset, Ekspor Excel |
 | Footer | Info model dan perangkat, tautan dokumentasi, hak cipta; tombol kembali ke atas muncul setelah gulir 300px |
 
 ## Komunikasi dengan API
@@ -36,6 +39,10 @@ Tema terang/gelap diatur tombol di header dan disimpan di `localStorage.theme`. 
 | Analisis dan Uji | `POST /api/score` |
 | Simpan dan Hapus template | `POST /api/templates`, `DELETE /api/templates/:id` |
 | Ekspor | `POST /api/export` (body = respons `/api/score` terakhir) |
+| Jalankan benchmark | `POST /api/benchmark` (body `/api/score` + `models`, `include_duplicates`; respons NDJSON dibaca bertahap) |
+| Batalkan benchmark | `POST /api/benchmark/cancel` (menutup stream juga membatalkan) |
+| Ekspor benchmark | `POST /api/benchmark/export` (`mode`, `texts`, preset/template, `runs` = event hasil/gagal/dilewati) |
+| Progres di header | field `benchmark` pada `GET /api/status` (analisis dan ganti model nonaktif selama berjalan) |
 
 Rincian struktur, state, kunci localStorage, dan perilaku editor: [docs/22_FRONTEND.md](../docs/22_FRONTEND.md). Referensi endpoint: [docs/21_BACKEND.md](../docs/21_BACKEND.md).
 

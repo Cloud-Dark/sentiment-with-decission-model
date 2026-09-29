@@ -31,6 +31,11 @@ Backend adalah satu berkas `server.js` (Express 5). Tugasnya: menyajikan `public
 | DELETE | `/api/templates/:id` | 204 | 404, 409, 500 |
 | POST | `/api/score` | 200 | 400, 502, 503 |
 | POST | `/api/export` | 200 (XLSX) | 400, 500 |
+| POST | `/api/benchmark` | 200 (NDJSON) | 400, 409, 502, 503 |
+| POST | `/api/benchmark/cancel` | 200 | - |
+| POST | `/api/benchmark/export` | 200 (XLSX) | 400, 500 |
+
+Selama benchmark berjalan, `/api/score`, `/api/model`, dan `/api/benchmark` mengembalikan **409** `{"error": "Benchmark sedang berjalan, tunggu atau batalkan dulu."}` (untuk `/api/benchmark`: `{"error": "Benchmark sedang berjalan"}`).
 
 ## GET /api/status
 
@@ -49,6 +54,8 @@ Backend adalah satu berkas `server.js` (Express 5). Tugasnya: menyajikan `public
 ```
 
 `models` dibaca ulang dari `models/` pada setiap panggilan, diurutkan berdasarkan nama.
+
+Field `benchmark` bernilai `null` saat tidak ada benchmark. Saat benchmark berjalan isinya `{"running": true, "index": 2, "total": 7, "file": "laya_multilingual_ud_q4_k_m.gguf", "stage": "loading"}`. Nilai `stage`: `preparing` (pemeriksaan duplikat, `index` = -1), `loading`, `scoring`, `restoring`. Selama benchmark, `message` berawalan `Benchmark model i/N: <file>… `.
 
 ## POST /api/model
 
@@ -251,6 +258,75 @@ Body adalah respons `/api/score` apa adanya (minimal `results[]`). Respons berup
 
 Galat: 400 `Body harus berupa respons /api/score (results[]).`; 500 `Gagal membuat file Excel: ...`.
 
+## POST /api/benchmark
+
+Menjalankan teks dan mode yang sama pada beberapa model secara berurutan: muat model, nilai semua teks, lanjut ke model berikutnya, lalu pulihkan model awal.
+
+Body sama dengan `/api/score` (`texts`, `mode`, `preset`, `template`/`template_id`, `extra_state`, `include_sentiment`), ditambah:
+
+| Field | Tipe | Keterangan |
+| --- | --- | --- |
+| `models` | array | Opsional. Nama berkas `.gguf` di `models/`. Bawaan: semua `*.gguf`, urutan sama dengan `/api/status`. Nama tidak valid menghasilkan 400. |
+| `include_duplicates` | boolean | Bawaan `false`: berkas dengan isi identik dilewati. |
+
+Validasi body dilakukan sebelum streaming (400/502 JSON seperti `/api/score`). Kode lain sebelum streaming: 409 jika benchmark lain berjalan, 503 jika `laya.exe` belum ada atau model sedang dimuat/diganti.
+
+Respons: `Content-Type: application/x-ndjson; charset=utf-8`, satu objek JSON per baris, dikirim segera setiap peristiwa terjadi:
+
+| `type` | Field lain |
+| --- | --- |
+| `start` | `total`, `original_model`, `mode`, `texts`, `models: [{file, size_mb, duplicate_of}]` |
+| `model_skipped` | `index`, `file`, `reason: "duplicate"`, `duplicate_of` |
+| `model_loading` | `index`, `file` |
+| `model_loaded` | `index`, `file`, `device`, `load_ms` |
+| `model_scoring` | `index`, `file` |
+| `model_result` | `index`, `file`, `device`, `load_ms`, `score_ms`, `ms_per_text`, `result` (respons `/api/score` persis) |
+| `model_error` | `index`, `file`, `stage: "load" \| "score"`, `error` |
+| `done` | `cancelled`, `restored_model`, `total_ms`, dan `error` jika model awal gagal dimuat ulang |
+
+Catatan perilaku:
+
+- **Duplikat**: berkas dengan ukuran sama di-hash md5 (streaming). Hash di-cache di memori per nama berkas, ukuran, dan mtime. Berkas pertama menurut urutan menjadi berkas kanonis. Hashing dilakukan sebelum peristiwa `start`.
+- **Perangkat**: ditentukan sekali di awal (`laya info` bila `auto`) dan dipakai untuk semua model.
+- **Model rusak**: jika laya keluar sebelum baris ready dengan galat muat/metadata di stderr (misalnya `Missing 'ggmlc.graph_spec' metadata`), tidak ada percobaan ulang di CPU. Pesan: `Model gagal dimuat: metadata 'ggmlc.graph_spec' tidak ada di file GGUF (bukan model laya ggmlc yang lengkap).` Benchmark berlanjut ke model berikutnya. Crash lain tetap mendapat fallback CPU.
+- **`load_ms`** mencakup pemuatan sampai baris ready, tanpa waktu menghentikan proses lama. **`score_ms`** sama dengan `result.latency_ms`.
+- **Pemulihan**: setelah selesai, galat, atau pembatalan, model awal dimuat ulang (dengan fallback CPU normal). Peristiwa `done` dikirim setelah pemulihan siap.
+- **Pembatalan**: `POST /api/benchmark/cancel` atau koneksi klien yang terputus sebelum `done`. Benchmark berhenti setelah langkah berjalan (muat atau nilai) selesai.
+
+Terukur pada GTX 1650 (`vulkan:1`), 4 teks `sentiment3`, 7 berkas (3 hasil, 2 duplikat, 2 galat): total sekitar 29-32 detik termasuk hashing dan pemulihan; muat 2,9-4,3 detik per model; analisis 460-550 ms (sekitar 115-140 ms per teks).
+
+## POST /api/benchmark/cancel
+
+Selalu mengembalikan `{"ok": true}`, juga saat tidak ada benchmark.
+
+## POST /api/benchmark/export
+
+Body:
+
+```json
+{
+  "mode": "sentiment3",
+  "texts": ["..."],
+  "preset": null,
+  "preset_title": null,
+  "template_id": null,
+  "template_title": null,
+  "runs": [ { "type": "model_result", "index": 0, "file": "...", "result": { } } ]
+}
+```
+
+`runs` berisi peristiwa `model_result`, `model_error`, dan `model_skipped` apa adanya (peristiwa lain diabaikan). Nama berkas: `benchmark-<mode>-YYYYMMDD-HHmmss.xlsx`.
+
+| Sheet | Isi |
+| --- | --- |
+| Ringkasan | Blok judul (tanggal, mode, preset/template, jumlah teks, perangkat), lalu satu baris per model: No, Model, Ukuran MB, Status (`OK`/`Gagal`/`Duplikat dari X`), Perangkat, Muat (ms), Analisis (ms), ms/teks, Rata-rata skor, jumlah per label (jika ada sentimen), Kesepakatan dengan mayoritas (%), Error. Header tebal dan dibekukan, dengan autofilter. |
+| Perbandingan | Satu baris per teks: No, Teks, Mayoritas (jika ada sentimen), lalu per model OK kolom `<model> · label` dan `<model> · skor`. Mode preset/custom menambah satu kolom per pertanyaan (`<model> · <id>`) berisi headline (pemenang atau angka). Sel label diwarnai: hijau muda positif, merah muda negatif, abu-abu netral. |
+| `<model>` | Satu sheet per model OK (nama berkas tanpa `.gguf`, maksimal 31 karakter, unik) dengan baris per teks yang sama seperti sheet Results pada `/api/export`. |
+
+Label mayoritas per teks dihitung dari model OK (label sentimen, atau pemenang pertanyaan `choice` pertama jika tanpa sentimen); hasil seri tidak dihitung. Kesepakatan = persentase teks (yang memiliki mayoritas) di mana label model sama dengan mayoritas.
+
+Galat: 400 `Body harus berisi runs[] (event model_result / model_error / model_skipped).` atau `Mode tidak dikenal: ...`; 500 `Gagal membuat file Excel: ...`.
+
 ## Siklus hidup proses laya
 
 1. Unduh `bin/laya.exe` jika belum ada.
@@ -259,5 +335,5 @@ Galat: 400 `Body harus berupa respons /api/score (results[]).`; 500 `Gagal membu
 4. `laya daemon <model> --device <dev>` dengan cwd `bin/` dan stdio `pipe`. Tidak ada port.
 5. Tunggu baris stdout `{"status":"ready"}`, timeout 10 menit. Device yang dilaporkan adalah device yang diminta.
 6. Permintaan dikirim satu per satu lewat stdin (antrean per proses) dan dicocokkan dengan `String(id)`. Baris stdout non-JSON dicatat dengan prefiks `[laya]`, stderr dengan `[laya!]`.
-7. Jika crash pada perangkat non-CPU, ulangi sekali dengan `cpu`. Permintaan tertunda saat proses berhenti ditolak.
+7. Jika crash pada perangkat non-CPU, ulangi sekali dengan `cpu`. Permintaan tertunda saat proses berhenti ditolak. Jika proses keluar sebelum ready, pesan galat diambil dari baris stderr terakhir laya. Pada benchmark, galat muat/metadata tidak diulang di CPU.
 8. Saat server berhenti, stdin ditutup lalu proses anak dihentikan. Jika server Node mati paksa, daemon keluar sendiri karena stdin tertutup.

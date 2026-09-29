@@ -1,7 +1,7 @@
 # Functional Requirements Document (FRD)
 
 > Status: Draft
-> Terakhir diperbarui: 2026-09-28
+> Terakhir diperbarui: 2026-09-29
 > Pemilik: _TBD_
 
 Kebutuhan fungsional diturunkan dari implementasi pada `server.js` dan `public/index.html` (commit `bf78ba9`). Detail endpoint ada di [21_BACKEND.md](21_BACKEND.md), detail UI di [22_FRONTEND.md](22_FRONTEND.md).
@@ -128,6 +128,20 @@ Kriteria penerimaan:
 
 Kriteria penerimaan:
 - Hasil tetap tampil setelah mode, preset, isi template, atau model berubah, disertai catatan "Hasil ini dari ... Jalankan analisis lagi untuk memperbarui."
+
+## FR-015 Benchmark model
+
+Pengguna dapat menjalankan teks dan mode yang sama pada setiap model di `models/` secara berurutan untuk membandingkan hasil, kecepatan, dan kegagalan tiap model, lalu mengekspor perbandingannya ke Excel sebagai bahan laporan.
+
+Kriteria penerimaan:
+- `POST /api/benchmark` menerima body yang sama dengan `/api/score`, ditambah `models` (opsional, bawaan seluruh `*.gguf` dengan urutan yang sama seperti daftar model) dan `include_duplicates` (bawaan `false`). Galat validasi dikembalikan sebagai 400 JSON sebelum streaming dimulai.
+- Respons berupa NDJSON yang dialirkan per peristiwa: `start`, `model_skipped`, `model_loading`, `model_loaded`, `model_scoring`, `model_result`, `model_error`, `done`. Objek `result` pada `model_result` identik dengan respons `/api/score`.
+- Berkas dengan isi identik (md5) dilewati sebagai duplikat dari berkas pertama menurut urutan, kecuali `include_duplicates: true`.
+- Model yang gagal dimuat (misalnya tidak memiliki metadata `ggmlc.graph_spec`) dilaporkan sebagai `model_error` tahap `load` tanpa percobaan ulang di CPU, dan benchmark berlanjut ke model berikutnya.
+- Setelah selesai, gagal, atau dibatalkan, model awal dimuat kembali sebelum peristiwa `done` dikirim. Kegagalan memuat model awal dilaporkan di `done.error`.
+- `POST /api/benchmark/cancel` dan terputusnya koneksi klien menghentikan benchmark setelah langkah yang sedang berjalan.
+- Selama benchmark berjalan, `/api/score`, `/api/model`, dan `/api/benchmark` mengembalikan 409, sedangkan `/api/status` memuat progres pada field `benchmark`.
+- `POST /api/benchmark/export` menghasilkan `benchmark-<mode>-YYYYMMDD-HHmmss.xlsx` dengan sheet `Ringkasan`, `Perbandingan`, dan satu sheet per model yang berhasil.
 
 ## Dokumen terkait
 

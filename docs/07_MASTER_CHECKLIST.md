@@ -1,7 +1,7 @@
 # Master Checklist
 
 > Status: Draft
-> Terakhir diperbarui: 2026-09-28
+> Terakhir diperbarui: 2026-09-29
 > Pemilik: _TBD_
 
 Fase mengikuti [06_IMPLEMENTATION_PLAN.md](06_IMPLEMENTATION_PLAN.md).
@@ -47,6 +47,19 @@ Fase mengikuti [06_IMPLEMENTATION_PLAN.md](06_IMPLEMENTATION_PLAN.md).
 - [x] Header status pada `models/README.md` dan `templates/README.md`
 - [ ] Review dan penetapan pemilik dokumen
 - [ ] Commit dokumentasi
+
+## Fase 4: Benchmark model
+
+- [x] `POST /api/benchmark` (NDJSON) dengan deteksi duplikat md5 (cache per berkas, ukuran, dan mtime)
+- [x] Model rusak dilaporkan sebagai `model_error` tanpa fallback CPU; benchmark berlanjut
+- [x] Pemulihan model awal setelah selesai, galat, pembatalan, atau klien terputus
+- [x] `POST /api/benchmark/cancel`, penguncian 409 pada `/api/score`, `/api/model`, `/api/benchmark`
+- [x] Field `benchmark` pada `/api/status`
+- [x] `POST /api/benchmark/export` (Ringkasan, Perbandingan, sheet per model)
+- [x] Refaktor inti `/api/score` menjadi fungsi yang dipakai ulang (bentuk respons identik)
+- [x] Uji manual backend (7 model: 3 hasil, 2 duplikat, 2 galat; custom; batal; putus koneksi; ekspor)
+- [ ] UI mode benchmark di `public/index.html`
+- [ ] UAT benchmark end-to-end dari UI
 
 ## Berikutnya
 

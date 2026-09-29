@@ -4,7 +4,8 @@
 // - Serves the static frontend from public/
 // - Manages a child `laya.exe daemon` process (ggmlc Laya decision model) over stdin/stdout JSON
 //   lines; laya opens no port, so the web port is the only one the app listens on
-// - Exposes /api/status, /api/model, /api/presets[/:name], /api/templates[/:id], /api/score, /api/export
+// - Exposes /api/status, /api/model, /api/presets[/:name], /api/templates[/:id], /api/score, /api/export,
+//   /api/benchmark[/cancel|/export] (run the same texts on every model in models/, one by one)
 // - Scoring modes: sentiment3 (choice), binary (noul), scale5 (score rubric 1..5), "preset"
 //   (a question set from the presets/laya-presets.json snapshot of laya /v1/presets, optionally
 //   plus the sentiment3 question) and "custom"
@@ -13,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const express = require('express');
 const ExcelJS = require('exceljs');
@@ -135,6 +137,9 @@ const state = {
   error: null,
   child: null,
   triedCpuFallback: false,
+  // Benchmark loads: a child that exits before ready with a load/metadata error is not retried on cpu.
+  skipCpuFallbackOnLoadError: false,
+  fallbackLaunch: null, // promise of the CPU fallback launch() started by the exit handler
   shuttingDown: false,
   switching: false, // true while POST /api/model is stopping the old child / loading the new one
   gen: 0, // bumped on every model switch; a stale launch() sees the mismatch and does not spawn
@@ -217,18 +222,44 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function pipeLogs(stream, prefix) {
+function pipeLogs(stream, prefix, onLine = null) {
   let buf = '';
   stream.setEncoding('utf8');
+  const emit = (line) => {
+    console.log(`${prefix} ${line}`);
+    if (onLine) onLine(line);
+  };
   stream.on('data', (chunk) => {
     buf += chunk;
     const lines = buf.split(/\r?\n/);
     buf = lines.pop();
-    for (const line of lines) if (line.trim()) console.log(`${prefix} ${line}`);
+    for (const line of lines) if (line.trim()) emit(line);
   });
   stream.on('end', () => {
-    if (buf.trim()) console.log(`${prefix} ${buf}`);
+    if (buf.trim()) emit(buf);
   });
+}
+
+// Load/metadata failures laya reports on stderr before the ready line, e.g.
+//   "[laya] skip <path>: Missing 'ggmlc.graph_spec' metadata in GGUF file"
+// They fail the same way on cpu, so a benchmark does not retry them there.
+const LOAD_ERROR_RE = /missing\b|metadata|gguf|failed to (load|open|read)|invalid|unsupported|not a valid|no such file|\bskip\b/i;
+
+function isLoadError(child) {
+  return !child.isReady && LOAD_ERROR_RE.test(child.stderrTail.join('\n'));
+}
+
+// Bahasa Indonesia message for a child that exited before its ready line.
+function loadErrorMessage(child, code, signal) {
+  const raw =
+    child.stderrTail
+      .map((l) => l.replace(/^\[laya\]\s*/, '').trim())
+      .filter(Boolean)
+      .pop() || '';
+  const m = raw.match(/Missing '([^']+)' metadata/i);
+  if (m) return `Model gagal dimuat: metadata '${m[1]}' tidak ada di file GGUF (bukan model laya ggmlc yang lengkap).`;
+  if (raw) return `Model gagal dimuat (laya.exe berhenti, code=${code}): ${raw}`;
+  return `laya.exe berhenti (code=${code}, signal=${signal})`;
 }
 
 // `laya daemon <gguf> --device X` protocol (stdin/stdout, one JSON object per line; no port):
@@ -253,8 +284,12 @@ function startLaya(modelPath, device) {
   child.readyWaiters = [];
   child.isReady = false;
   child.failed = false;
+  child.stderrTail = []; // last stderr lines, for load error messages
   child.stdin.on('error', (err) => log(`laya stdin error: ${err.message}`));
-  pipeLogs(child.stderr, '[laya!]');
+  pipeLogs(child.stderr, '[laya!]', (line) => {
+    child.stderrTail.push(line);
+    if (child.stderrTail.length > 8) child.stderrTail.shift();
+  });
   readJsonLines(child);
 
   child.on('error', (err) => {
@@ -264,6 +299,21 @@ function startLaya(modelPath, device) {
   });
 
   child.on('exit', (code, signal) => {
+    // Before the ready line, 'exit' can fire before stderr is drained: wait for it (max 500 ms)
+    // so the load error message and isLoadError() see laya's last lines.
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(t);
+      onExit(code, signal);
+    };
+    const t = setTimeout(finish, 500);
+    if (child.isReady || child.stderr.readableEnded) finish();
+    else child.stderr.once('end', finish);
+  });
+  const onExit = (code, signal) => {
+    const early = !child.isReady;
     failChild(child, new Error(`laya.exe berhenti (code=${code}, signal=${signal})`));
     const wasCurrent = state.child === child;
     if (wasCurrent) state.child = null;
@@ -272,18 +322,19 @@ function startLaya(modelPath, device) {
     if (state.shuttingDown || child.intentionalStop || !wasCurrent) return;
     const wasReady = state.ready;
     state.ready = false;
-    state.error = `laya.exe berhenti (code=${code}, signal=${signal})`;
+    state.error = early ? loadErrorMessage(child, code, signal) : `laya.exe berhenti (code=${code}, signal=${signal})`;
     log(state.error);
-    if (device !== 'cpu' && !state.triedCpuFallback) {
+    const skipFallback = state.skipCpuFallbackOnLoadError && isLoadError(child);
+    if (device !== 'cpu' && !state.triedCpuFallback && !skipFallback) {
       state.triedCpuFallback = true;
       setStatus(`laya.exe crash di device "${device}", memuat ulang dengan device cpu...`);
-      launch(modelPath, 'cpu');
+      state.fallbackLaunch = launch(modelPath, 'cpu');
     } else {
       setStatus(
-        `Model gagal berjalan: ${state.error}${wasReady ? '' : '. Periksa log konsol server.'}`
+        `Model gagal berjalan: ${state.error.replace(/\.$/, '')}${wasReady ? '' : '. Periksa log konsol server.'}`
       );
     }
-  });
+  };
   return child;
 }
 
@@ -413,13 +464,13 @@ function resolveDevice(requested, modelPath) {
   });
 }
 
-async function launch(modelPath, device, gen = state.gen) {
+async function launch(modelPath, device, gen = state.gen, statusPrefix = '') {
   if (gen !== state.gen) return;
   state.ready = false;
   state.model = path.basename(modelPath);
   state.modelPath = modelPath;
   state.device = null;
-  setStatus(`Memuat model ${state.model} (device: ${device})...`);
+  setStatus(`${statusPrefix}Memuat model ${state.model} (device: ${device})...`);
   const child = startLaya(modelPath, device);
   const ready = await waitForReady(child);
   if (!ready) {
@@ -432,7 +483,7 @@ async function launch(modelPath, device, gen = state.gen) {
   // The daemon's ready line carries no device: report the device it was started with.
   state.device = device;
   state.error = null;
-  setStatus(`Model siap: ${state.model} (device: ${state.device})`, { ready: true });
+  setStatus(`${statusPrefix}Model siap: ${state.model} (device: ${state.device})`, { ready: true });
 }
 
 // Stop the current laya child on purpose and wait for it to exit: close stdin first (the daemon
@@ -474,9 +525,16 @@ function stopChild(timeoutMs = 15000) {
   });
 }
 
-// Switch the active model (POST /api/model). Runs in the background; the UI polls /api/status.
-async function switchModel(modelPath) {
+// Switch the active model (POST /api/model runs it in the background; the UI polls /api/status).
+// Options (used by the benchmark):
+//   device                     - already-resolved device, skips `laya info`
+//   skipCpuFallbackOnLoadError - no CPU retry when the model fails to load (bad/missing metadata)
+//   statusPrefix               - prepended to every status message of this switch
+// Resolves {ok, error, device, load_ms} once the model (or its CPU fallback) is ready or has failed.
+// load_ms covers device detection + load, not stopping the old child.
+async function switchModel(modelPath, opts = {}) {
   const gen = ++state.gen;
+  const pre = opts.statusPrefix || '';
   state.switching = true;
   state.ready = false;
   state.model = path.basename(modelPath);
@@ -484,18 +542,37 @@ async function switchModel(modelPath) {
   state.device = null;
   state.error = null;
   state.triedCpuFallback = false;
+  state.skipCpuFallbackOnLoadError = opts.skipCpuFallbackOnLoadError === true;
+  state.fallbackLaunch = null;
+  let t0 = Date.now();
   try {
-    setStatus(`Mengganti model ke ${state.model}: menghentikan model lama...`);
+    setStatus(`${pre}Mengganti model ke ${state.model}: menghentikan model lama...`);
     await stopChild();
-    if (gen !== state.gen) return; // superseded by a newer switch request
-    setStatus(`Mendeteksi GPU & memuat model ${state.model}...`);
-    const device = await resolveDevice(LAYA_DEVICE, modelPath);
-    await launch(modelPath, device, gen);
+    if (gen !== state.gen) {
+      // superseded by a newer switch request
+      return { ok: false, error: 'Digantikan oleh penggantian model lain.', device: null, load_ms: 0 };
+    }
+    t0 = Date.now();
+    setStatus(`${pre}Mendeteksi GPU & memuat model ${state.model}...`);
+    const device = opts.device || (await resolveDevice(LAYA_DEVICE, modelPath));
+    await launch(modelPath, device, gen, pre);
+    // A crash before ready may have started a CPU fallback launch (exit handler): wait for it too.
+    while (!state.ready && state.fallbackLaunch && gen === state.gen) {
+      const p = state.fallbackLaunch;
+      state.fallbackLaunch = null;
+      await p;
+    }
+    const ok = gen === state.gen && state.ready;
+    return { ok, error: ok ? null : state.error || state.message, device: state.device, load_ms: Date.now() - t0 };
   } catch (err) {
     state.error = err.message;
-    setStatus(`Gagal mengganti model: ${err.message}`, { ready: false });
+    setStatus(`${pre}Gagal mengganti model: ${err.message}`, { ready: false });
+    return { ok: false, error: err.message, device: null, load_ms: Date.now() - t0 };
   } finally {
-    if (gen === state.gen) state.switching = false;
+    if (gen === state.gen) {
+      state.switching = false;
+      state.skipCpuFallbackOnLoadError = false;
+    }
   }
 }
 
@@ -1244,6 +1321,14 @@ const app = express();
 app.use(express.json({ limit: '20mb' }));
 app.use(express.static(path.join(ROOT, 'public')));
 
+// The running benchmark (null when idle). See the Benchmark section below.
+let bench = null;
+const BENCH_BUSY = 'Benchmark sedang berjalan, tunggu atau batalkan dulu.';
+
+function benchBusy(res) {
+  return res.status(409).json({ error: BENCH_BUSY });
+}
+
 function statusBody() {
   return {
     ready: state.ready,
@@ -1252,6 +1337,9 @@ function statusBody() {
     message: state.message,
     switching: state.switching,
     models: listModels(),
+    benchmark: bench
+      ? { running: true, index: bench.index, total: bench.total, file: bench.file, stage: bench.stage }
+      : null,
   };
 }
 
@@ -1262,6 +1350,7 @@ app.get('/api/status', (req, res) => {
 // Switch the active model. Responds right away (202); the UI polls /api/status.
 // The choice lives in memory only (a restart goes back to the default pick).
 app.post('/api/model', (req, res) => {
+  if (bench) return benchBusy(res);
   const file = req.body?.file;
   // Only a bare *.gguf file name that currently exists in models/ (no path traversal).
   const valid =
@@ -1382,36 +1471,47 @@ app.delete('/api/templates/:id', (req, res) => {
   res.status(204).end();
 });
 
-app.post('/api/score', async (req, res) => {
-  const raw = req.body?.texts;
-  if (!Array.isArray(raw)) return res.status(400).json({ error: 'Body harus berupa {"texts": string[]}' });
-  const mode = req.body?.mode ?? DEFAULT_MODE;
+// Request-level error with an HTTP status (400 validation, 502 preset snapshot, ...).
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+// Validates a /api/score (or /api/benchmark) body and resolves everything scoring needs, without
+// touching laya: {mode, texts, preset, template, includeSentiment, extraState}. Throws HttpError.
+async function prepareScoreJob(reqBody) {
+  const raw = reqBody?.texts;
+  if (!Array.isArray(raw)) throw new HttpError(400, 'Body harus berupa {"texts": string[]}');
+  const mode = reqBody?.mode ?? DEFAULT_MODE;
   if (typeof mode !== 'string' || (!MODES[mode] && !isQuestionSetMode(mode))) {
-    return res.status(400).json({
-      error: `Mode tidak dikenal: ${mode}. Pilihan: ${[...Object.keys(MODES), PRESET_MODE, CUSTOM_MODE].join(', ')}.`,
-    });
+    throw new HttpError(
+      400,
+      `Mode tidak dikenal: ${mode}. Pilihan: ${[...Object.keys(MODES), PRESET_MODE, CUSTOM_MODE].join(', ')}.`
+    );
   }
   const isPreset = mode === PRESET_MODE;
   const isCustom = mode === CUSTOM_MODE;
-  const presetName = req.body?.preset;
+  const presetName = reqBody?.preset;
   if (isPreset && (typeof presetName !== 'string' || !presetName)) {
-    return res.status(400).json({ error: 'Mode preset butuh field "preset" (nama preset).' });
+    throw new HttpError(400, 'Mode preset butuh field "preset" (nama preset).');
   }
-  let includeSentiment = req.body?.include_sentiment !== false;
+  let includeSentiment = reqBody?.include_sentiment !== false;
   // Custom mode: an inline (possibly unsaved) template, or a saved one by template_id.
   let template = null;
   let extraState = {};
   try {
-    if (isPreset) extraState = normalizeExtraState(req.body?.extra_state);
+    if (isPreset) extraState = normalizeExtraState(reqBody?.extra_state);
     if (isCustom) {
-      let src = req.body?.template;
-      const templateId = req.body?.template_id;
+      let src = reqBody?.template;
+      const templateId = reqBody?.template_id;
       if (!isPlainObject(src)) {
         if (!isTemplateId(templateId)) {
-          return res.status(400).json({ error: 'Mode custom butuh field "template" (objek) atau "template_id".' });
+          throw new HttpError(400, 'Mode custom butuh field "template" (objek) atau "template_id".');
         }
         src = readTemplate(templateId);
-        if (!src) return res.status(400).json({ error: `Template tidak ditemukan: ${templateId}` });
+        if (!src) throw new HttpError(400, `Template tidak ditemukan: ${templateId}`);
       }
       const set = validateQuestionSet(src);
       const id = isTemplateId(src.id) ? src.id : isTemplateId(templateId) ? templateId : null;
@@ -1424,59 +1524,79 @@ app.post('/api/score', async (req, res) => {
       extraState = set.extra_state;
     }
   } catch (err) {
-    if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
+    if (err instanceof ValidationError) throw new HttpError(400, err.message);
     throw err;
   }
   const texts = raw
     .filter((t) => typeof t === 'string' || typeof t === 'number')
     .map((t) => String(t).trim())
     .filter(Boolean);
-  if (!texts.length) return res.status(400).json({ error: 'Tidak ada teks yang valid untuk dinilai.' });
+  if (!texts.length) throw new HttpError(400, 'Tidak ada teks yang valid untuk dinilai.');
   if (texts.length > MAX_TEXTS) {
-    return res.status(400).json({ error: `Maksimal ${MAX_TEXTS} teks per permintaan (diterima ${texts.length}).` });
+    throw new HttpError(400, `Maksimal ${MAX_TEXTS} teks per permintaan (diterima ${texts.length}).`);
   }
-  if (state.switching || !state.ready) return notReady(res);
-
-  const t0 = Date.now();
-  const model = state.model;
   let preset = null;
   if (isPreset) {
     try {
       preset = (await getPresets()).find((p) => p.name === presetName) || null;
     } catch (err) {
       log(`Presets error: ${err.message}`);
-      return res.status(502).json({ error: `Gagal memuat preset: ${err.message}` });
+      throw new HttpError(502, `Gagal memuat preset: ${err.message}`);
     }
-    if (!preset) return res.status(400).json({ error: `Preset tidak dikenal: ${presetName}.` });
+    if (!preset) throw new HttpError(400, `Preset tidak dikenal: ${presetName}.`);
     delete extraState[preset.state_key]; // the input text always wins
   }
+  return { mode, texts, preset, template, includeSentiment, extraState };
+}
+
+// Scores a prepared job on the currently loaded model and returns the /api/score response body.
+// Throws on laya errors (the route maps them to 502).
+async function runScoreJob(job) {
+  const { mode, texts, preset, template, includeSentiment, extraState } = job;
+  const isPreset = mode === PRESET_MODE;
+  const isCustom = mode === CUSTOM_MODE;
+  const t0 = Date.now();
+  const model = state.model;
+  let scored;
+  const usage = { input_tokens: 0, output_tokens: 0, latency_ms: 0 };
+  if (isPreset) scored = await scorePreset(texts, preset, includeSentiment, extraState, usage);
+  else if (isCustom) scored = await scorePreset(texts, template, includeSentiment, extraState, usage);
+  else scored = await scoreTexts(texts, mode, usage);
+  // index is 0-based (frontend displays index + 1)
+  const results = scored.map((s, index) => ({ index, text: texts[index], ...s }));
+  const isSet = isPreset || isCustom;
+  const body = {
+    mode,
+    model,
+    preset: preset ? preset.name : null,
+    preset_title: preset ? preset.title ?? preset.name : null,
+    include_sentiment: isSet ? includeSentiment : true,
+    results,
+    average: buildAverage(results, mode, !isSet || includeSentiment),
+    latency_ms: Date.now() - t0,
+    // Summed over the per-text daemon requests; total_tokens feeds the editor's "N token" meta.
+    usage: { ...usage, total_tokens: usage.input_tokens + usage.output_tokens },
+  };
+  if (isCustom) {
+    body.template_id = template.id;
+    body.template_title = template.title;
+  }
+  if (isSet) body.extra_state = extraState;
+  return body;
+}
+
+app.post('/api/score', async (req, res) => {
+  if (bench) return benchBusy(res);
+  let job;
   try {
-    let scored;
-    const usage = { input_tokens: 0, output_tokens: 0, latency_ms: 0 };
-    if (isPreset) scored = await scorePreset(texts, preset, includeSentiment, extraState, usage);
-    else if (isCustom) scored = await scorePreset(texts, template, includeSentiment, extraState, usage);
-    else scored = await scoreTexts(texts, mode, usage);
-    // index is 0-based (frontend displays index + 1)
-    const results = scored.map((s, index) => ({ index, text: texts[index], ...s }));
-    const isSet = isPreset || isCustom;
-    const body = {
-      mode,
-      model,
-      preset: preset ? preset.name : null,
-      preset_title: preset ? preset.title ?? preset.name : null,
-      include_sentiment: isSet ? includeSentiment : true,
-      results,
-      average: buildAverage(results, mode, !isSet || includeSentiment),
-      latency_ms: Date.now() - t0,
-      // Summed over the per-text daemon requests; total_tokens feeds the editor's "N token" meta.
-      usage: { ...usage, total_tokens: usage.input_tokens + usage.output_tokens },
-    };
-    if (isCustom) {
-      body.template_id = template.id;
-      body.template_title = template.title;
-    }
-    if (isSet) body.extra_state = extraState;
-    res.json(body);
+    job = await prepareScoreJob(req.body);
+  } catch (err) {
+    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+    throw err;
+  }
+  if (state.switching || !state.ready) return notReady(res);
+  try {
+    res.json(await runScoreJob(job));
   } catch (err) {
     log(`Scoring error: ${err.message}`);
     res.status(502).json({ error: `Gagal menilai teks: ${err.message}` });
@@ -1491,9 +1611,50 @@ function timestamp(d = new Date()) {
 // Results + Summary sheets for the sentiment modes (sentiment3 / binary / scale5).
 function addSentimentSheets(wb, { results, average, mode, model, body }) {
   const def = MODES[mode];
-  // Results: No, Teks, Label, Skor (-1..1), [value column per mode], one % column per option,
-  // Confidence, Act. sentiment3 has no value column (value === Skor).
-  const ws = wb.addWorksheet('Results', { views: [{ state: 'frozen', ySplit: 1 }] });
+  addSentimentResultsSheet(wb, 'Results', { results, average, mode });
+
+  const sum = wb.addWorksheet('Summary');
+  sum.columns = [
+    { header: 'Metric', key: 'k', width: 34 },
+    { header: 'Value', key: 'v', width: 40 },
+  ];
+  sum.getRow(1).font = { bold: true };
+  const counts = { positive: 0, neutral: 0, negative: 0 };
+  for (const r of results) if (counts[r.label] !== undefined) counts[r.label]++;
+  // [metric, value, numFmt?]
+  const rows = [
+    ['Mode', mode],
+    ['Model', model],
+    ['Jumlah teks', results.length],
+    ['Label rata-rata', String(average.label ?? '')],
+    [`Skor rata-rata (${def.scoreRule})`, num(average.score), '0.0000'],
+  ];
+  if (def.valueHeader) {
+    rows.push([`Rata-rata ${def.valueHeader}`, num(average.value), mode === 'binary' ? '0.00%' : '0.00']);
+  }
+  def.options.forEach((o, i) => rows.push([`Rata-rata ${o.text}`, optionProb(average, o.key, i), '0.00%']));
+  rows.push(['Rata-rata confidence', num(average.confidence), '0.00%']);
+  rows.push(['Jumlah positive', counts.positive]);
+  if (mode !== 'binary') rows.push(['Jumlah neutral', counts.neutral]);
+  rows.push(
+    ['Jumlah negative', counts.negative],
+    ['Latency (ms)', body.latency_ms !== undefined ? num(body.latency_ms) : ''],
+    ['Device', state.device || ''],
+    ['Diekspor', new Date().toISOString()],
+    ['Aturan label rata-rata', def.averageRule]
+  );
+  for (const [k, v, fmt] of rows) {
+    const row = sum.addRow({ k, v });
+    if (fmt) row.getCell('v').numFmt = fmt;
+  }
+}
+
+// Per-text sheet of a sentiment mode: No, Teks, Label, Skor (-1..1), [value column per mode],
+// one % column per option, Confidence, Act, plus an average row. sentiment3 has no value column
+// (value === Skor). Also used for the per-model sheets of the benchmark export.
+function addSentimentResultsSheet(wb, name, { results, average, mode }) {
+  const def = MODES[mode];
+  const ws = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 1 }] });
   const columns = [
     { header: 'No', key: 'no', width: 6 },
     { header: 'Teks', key: 'text', width: 70 },
@@ -1538,41 +1699,7 @@ function addSentimentSheets(wb, { results, average, mode, model, body }) {
   def.options.forEach((o, i) => (ws.getColumn(`opt${i}`).numFmt = '0.00%'));
   ws.getColumn('conf').numFmt = '0.00%';
   ws.getColumn('act').numFmt = '0.00%';
-
-  const sum = wb.addWorksheet('Summary');
-  sum.columns = [
-    { header: 'Metric', key: 'k', width: 34 },
-    { header: 'Value', key: 'v', width: 40 },
-  ];
-  sum.getRow(1).font = { bold: true };
-  const counts = { positive: 0, neutral: 0, negative: 0 };
-  for (const r of results) if (counts[r.label] !== undefined) counts[r.label]++;
-  // [metric, value, numFmt?]
-  const rows = [
-    ['Mode', mode],
-    ['Model', model],
-    ['Jumlah teks', results.length],
-    ['Label rata-rata', String(average.label ?? '')],
-    [`Skor rata-rata (${def.scoreRule})`, num(average.score), '0.0000'],
-  ];
-  if (def.valueHeader) {
-    rows.push([`Rata-rata ${def.valueHeader}`, num(average.value), mode === 'binary' ? '0.00%' : '0.00']);
-  }
-  def.options.forEach((o, i) => rows.push([`Rata-rata ${o.text}`, optionProb(average, o.key, i), '0.00%']));
-  rows.push(['Rata-rata confidence', num(average.confidence), '0.00%']);
-  rows.push(['Jumlah positive', counts.positive]);
-  if (mode !== 'binary') rows.push(['Jumlah neutral', counts.neutral]);
-  rows.push(
-    ['Jumlah negative', counts.negative],
-    ['Latency (ms)', body.latency_ms !== undefined ? num(body.latency_ms) : ''],
-    ['Device', state.device || ''],
-    ['Diekspor', new Date().toISOString()],
-    ['Aturan label rata-rata', def.averageRule]
-  );
-  for (const [k, v, fmt] of rows) {
-    const row = sum.addRow({ k, v });
-    if (fmt) row.getCell('v').numFmt = fmt;
-  }
+  return ws;
 }
 
 // Headline as an Excel cell value: choice -> winning key; noul -> P(true); score -> expected level.
@@ -1588,20 +1715,76 @@ function questionsOf(r) {
 // Results + Summary sheets for preset mode: No, Teks, [Label, Skor if the sentiment question is
 // included], then per preset question "<id>" (headline) and "<id> conf", plus an average row.
 function addPresetSheets(wb, { results, average, model, body }) {
-  const avgQuestions = Array.isArray(average?.questions) ? average.questions : averageQuestions(results);
-  // Question order: first seen across results (sentiment first, then the preset order).
+  const { avgQuestions, hasSentiment } = addPresetResultsSheet(wb, 'Results', { results, average });
+
+  const sum = wb.addWorksheet('Summary');
+  sum.columns = [
+    { header: 'Metric', key: 'k', width: 34 },
+    { header: 'Value', key: 'v', width: 40 },
+  ];
+  sum.getRow(1).font = { bold: true };
+  const isCustom = body.mode === CUSTOM_MODE;
+  const rows = isCustom
+    ? [
+        ['Mode', CUSTOM_MODE],
+        ['Template', String(body.template_id ?? '') || '(belum disimpan)'],
+        ['Judul template', String(body.template_title ?? '')],
+      ]
+    : [
+        ['Mode', PRESET_MODE],
+        ['Preset', String(body.preset ?? '')],
+        ['Judul preset', String(body.preset_title ?? '')],
+      ];
+  const extra = isPlainObject(body.extra_state) ? Object.entries(body.extra_state) : [];
+  for (const [k, v] of extra) rows.push([`State tetap: ${k}`, String(v)]);
+  rows.push(
+    ['Model', model],
+    ['Jumlah teks', results.length],
+    ['Sentimen disertakan', hasSentiment ? 'ya' : 'tidak']
+  );
+  if (hasSentiment) {
+    rows.push(
+      ['Label sentimen rata-rata', String(average?.label ?? '')],
+      [`Skor sentimen rata-rata (${MODES.sentiment3.scoreRule})`, num(average?.score), '0.0000']
+    );
+  }
+  for (const q of avgQuestions) {
+    if (q.id === 'sentiment') continue;
+    rows.push([`Rata-rata ${q.id} (${q.type})`, headlineCell(q), q.type === 'choice' ? undefined : '0.0000']);
+  }
+  rows.push(
+    ['Latency (ms)', body.latency_ms !== undefined ? num(body.latency_ms) : ''],
+    ['Device', state.device || ''],
+    ['Diekspor', new Date().toISOString()]
+  );
+  for (const [k, v, fmt] of rows) {
+    const row = sum.addRow({ k, v });
+    if (fmt) row.getCell('v').numFmt = fmt;
+  }
+}
+
+// Question order across results (first seen: sentiment first, then the preset/template order).
+function questionOrder(results, extra = []) {
   const order = [];
   const types = {};
-  for (const q of [...results.flatMap(questionsOf), ...avgQuestions]) {
+  for (const q of [...results.flatMap(questionsOf), ...extra]) {
     if (!types[q.id]) {
       types[q.id] = q.type;
       order.push(q.id);
     }
   }
+  return { order, types };
+}
+
+// Per-text sheet of preset/custom mode (also the per-model sheets of the benchmark export).
+// Returns {avgQuestions, hasSentiment} for the Summary sheet.
+function addPresetResultsSheet(wb, name, { results, average }) {
+  const avgQuestions = Array.isArray(average?.questions) ? average.questions : averageQuestions(results);
+  const { order, types } = questionOrder(results, avgQuestions);
   const hasSentiment = order.includes('sentiment');
   const ids = order.filter((id) => id !== 'sentiment');
 
-  const ws = wb.addWorksheet('Results', { views: [{ state: 'frozen', ySplit: 1 }] });
+  const ws = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 1 }] });
   const columns = [
     { header: 'No', key: 'no', width: 6 },
     { header: 'Teks', key: 'text', width: 70 },
@@ -1649,51 +1832,7 @@ function addPresetSheets(wb, { results, average, model, body }) {
     if (types[id] === 'score') ws.getColumn(`q${i}`).numFmt = '0.0000';
     ws.getColumn(`c${i}`).numFmt = '0.00%';
   });
-
-  const sum = wb.addWorksheet('Summary');
-  sum.columns = [
-    { header: 'Metric', key: 'k', width: 34 },
-    { header: 'Value', key: 'v', width: 40 },
-  ];
-  sum.getRow(1).font = { bold: true };
-  const isCustom = body.mode === CUSTOM_MODE;
-  const rows = isCustom
-    ? [
-        ['Mode', CUSTOM_MODE],
-        ['Template', String(body.template_id ?? '') || '(belum disimpan)'],
-        ['Judul template', String(body.template_title ?? '')],
-      ]
-    : [
-        ['Mode', PRESET_MODE],
-        ['Preset', String(body.preset ?? '')],
-        ['Judul preset', String(body.preset_title ?? '')],
-      ];
-  const extra = isPlainObject(body.extra_state) ? Object.entries(body.extra_state) : [];
-  for (const [k, v] of extra) rows.push([`State tetap: ${k}`, String(v)]);
-  rows.push(
-    ['Model', model],
-    ['Jumlah teks', results.length],
-    ['Sentimen disertakan', hasSentiment ? 'ya' : 'tidak']
-  );
-  if (hasSentiment) {
-    rows.push(
-      ['Label sentimen rata-rata', String(average?.label ?? '')],
-      [`Skor sentimen rata-rata (${MODES.sentiment3.scoreRule})`, num(average?.score), '0.0000']
-    );
-  }
-  for (const q of avgQuestions) {
-    if (q.id === 'sentiment') continue;
-    rows.push([`Rata-rata ${q.id} (${q.type})`, headlineCell(q), q.type === 'choice' ? undefined : '0.0000']);
-  }
-  rows.push(
-    ['Latency (ms)', body.latency_ms !== undefined ? num(body.latency_ms) : ''],
-    ['Device', state.device || ''],
-    ['Diekspor', new Date().toISOString()]
-  );
-  for (const [k, v, fmt] of rows) {
-    const row = sum.addRow({ k, v });
-    if (fmt) row.getCell('v').numFmt = fmt;
-  }
+  return { avgQuestions, hasSentiment };
 }
 
 // Detail sheet (all modes), long format: one row per option of every question of every text.
@@ -1773,6 +1912,467 @@ app.post('/api/export', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Benchmark: run the same texts + mode on every model in models/, one model at a time.
+// POST /api/benchmark streams NDJSON events; /api/benchmark/cancel stops after the current step;
+// /api/benchmark/export turns the received events into a comparison workbook.
+// While a run is active, /api/score, /api/model and /api/benchmark answer 409 and /api/status
+// reports {benchmark: {running, index, total, file, stage}}. The original model is always restored.
+// ---------------------------------------------------------------------------
+
+// md5 of a file's content, cached by file + size + mtime (hashing ~600 MB takes 1-2 s).
+const md5Cache = new Map();
+
+function md5File(p) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('md5');
+    fs.createReadStream(p, { highWaterMark: 4 * 1024 * 1024 })
+      .on('data', (chunk) => hash.update(chunk))
+      .on('error', reject)
+      .on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+async function fileDigest(file) {
+  const p = path.join(MODELS_DIR, file);
+  const st = fs.statSync(p);
+  const hit = md5Cache.get(file);
+  if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) return hit.md5;
+  const md5 = await md5File(p);
+  md5Cache.set(file, { size: st.size, mtimeMs: st.mtimeMs, md5 });
+  return md5;
+}
+
+// Validates the optional `models` field: bare *.gguf names that exist in models/. Returns the
+// listModels() entries, sorted like listModels and without repeated names. Throws HttpError.
+function benchmarkModelList(requested) {
+  const all = listModels();
+  if (requested === undefined || requested === null) return all;
+  if (!Array.isArray(requested) || !requested.length) {
+    throw new HttpError(400, 'Field "models" harus berupa daftar nama file .gguf di folder models/.');
+  }
+  for (const f of requested) {
+    if (typeof f !== 'string' || f !== path.basename(f) || f.includes('..') || !all.some((m) => m.file === f)) {
+      throw new HttpError(400, `File model tidak valid: ${String(f)}. Pilih file .gguf yang ada di folder models/.`);
+    }
+  }
+  return all.filter((m) => requested.includes(m.file));
+}
+
+// Adds duplicate_of to each model: same size and same md5 as an earlier file (sort order) -> that
+// file is the canonical one. Only files sharing a size with another file are hashed.
+async function markDuplicates(models) {
+  const bySize = new Map();
+  for (const m of models) {
+    let size = -1;
+    try {
+      size = fs.statSync(path.join(MODELS_DIR, m.file)).size;
+    } catch {
+      /* vanished: never a duplicate */
+    }
+    m.duplicate_of = null;
+    if (size < 0) continue;
+    if (!bySize.has(size)) bySize.set(size, []);
+    bySize.get(size).push(m);
+  }
+  for (const group of bySize.values()) {
+    if (group.length < 2) continue;
+    const seen = new Map(); // md5 -> canonical file
+    for (const m of group) {
+      let md5;
+      try {
+        md5 = await fileDigest(m.file);
+      } catch (err) {
+        log(`Gagal menghitung md5 ${m.file}: ${err.message}`);
+        continue;
+      }
+      if (seen.has(md5)) m.duplicate_of = seen.get(md5);
+      else seen.set(md5, m.file);
+    }
+  }
+  return models;
+}
+
+app.post('/api/benchmark', async (req, res) => {
+  if (bench) return res.status(409).json({ error: 'Benchmark sedang berjalan' });
+  let job;
+  let models;
+  try {
+    job = await prepareScoreJob(req.body);
+    models = benchmarkModelList(req.body?.models);
+  } catch (err) {
+    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+    throw err;
+  }
+  if (bench) return res.status(409).json({ error: 'Benchmark sedang berjalan' }); // raced during the await
+  if (!models.length) return res.status(400).json({ error: 'Tidak ada file model .gguf di folder models/.' });
+  if (!fs.existsSync(EXE_PATH)) return res.status(503).json({ error: 'laya.exe belum siap, coba lagi nanti.' });
+  // A model that is being switched/loaded right now would race with the benchmark's own loads.
+  if (state.switching || (state.child && !state.ready)) return notReady(res);
+  const includeDuplicates = req.body?.include_duplicates === true;
+
+  const t0 = Date.now();
+  const originalModel = state.model;
+  const run = { index: -1, total: models.length, file: null, stage: 'preparing', cancelled: false };
+  bench = run;
+
+  res.status(200);
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  // A client that goes away before "done" cancels the run (res 'close' fires on disconnect; the
+  // request's own 'close' already fires once the body has been read).
+  res.on('close', () => {
+    if (!res.writableEnded && bench === run && !run.cancelled) {
+      log('Benchmark: klien terputus, membatalkan...');
+      run.cancelled = true;
+    }
+  });
+  const emit = (event) => {
+    if (!res.destroyed && !res.writableEnded) res.write(`${JSON.stringify(event)}\n`);
+  };
+
+  const total = models.length;
+  let restored = null;
+  let restoreError = null;
+  try {
+    setStatus(`Benchmark: memeriksa duplikat ${total} model...`);
+    await markDuplicates(models);
+    const device = await resolveDevice(
+      LAYA_DEVICE,
+      path.join(MODELS_DIR, originalModel && fs.existsSync(path.join(MODELS_DIR, originalModel)) ? originalModel : models[0].file)
+    );
+    emit({
+      type: 'start',
+      total,
+      original_model: originalModel,
+      mode: job.mode,
+      texts: job.texts,
+      models: models.map((m) => ({ file: m.file, size_mb: m.size_mb, duplicate_of: m.duplicate_of })),
+    });
+
+    for (let i = 0; i < total && !run.cancelled; i++) {
+      const { file } = models[i];
+      const pre = `Benchmark model ${i + 1}/${total}: ${file}… `;
+      Object.assign(run, { index: i, file });
+      if (models[i].duplicate_of && !includeDuplicates) {
+        emit({ type: 'model_skipped', index: i, file, reason: 'duplicate', duplicate_of: models[i].duplicate_of });
+        continue;
+      }
+      run.stage = 'loading';
+      emit({ type: 'model_loading', index: i, file });
+      const loaded = await switchModel(path.join(MODELS_DIR, file), {
+        device,
+        skipCpuFallbackOnLoadError: true,
+        statusPrefix: pre,
+      });
+      if (!loaded.ok) {
+        emit({ type: 'model_error', index: i, file, stage: 'load', error: loaded.error || 'Model gagal dimuat.' });
+        continue;
+      }
+      emit({ type: 'model_loaded', index: i, file, device: loaded.device, load_ms: loaded.load_ms });
+      if (run.cancelled) break;
+      run.stage = 'scoring';
+      setStatus(`${pre}menilai ${job.texts.length} teks...`);
+      emit({ type: 'model_scoring', index: i, file });
+      try {
+        const result = await runScoreJob(job);
+        emit({
+          type: 'model_result',
+          index: i,
+          file,
+          device: loaded.device,
+          load_ms: loaded.load_ms,
+          score_ms: result.latency_ms,
+          ms_per_text: round4(result.latency_ms / job.texts.length),
+          result,
+        });
+      } catch (err) {
+        log(`Benchmark scoring error (${file}): ${err.message}`);
+        emit({ type: 'model_error', index: i, file, stage: 'score', error: `Gagal menilai teks: ${err.message}` });
+      }
+    }
+  } catch (err) {
+    log(`Benchmark error: ${err.message}`);
+    emit({ type: 'model_error', index: run.index, file: run.file, stage: run.stage === 'scoring' ? 'score' : 'load', error: `Benchmark gagal: ${err.message}` });
+  } finally {
+    // Restore the model that was active before the run (normal load, CPU fallback allowed).
+    run.stage = 'restoring';
+    run.file = originalModel;
+    if (originalModel && fs.existsSync(path.join(MODELS_DIR, originalModel))) {
+      if (state.model !== originalModel || !state.ready) {
+        const r = await switchModel(path.join(MODELS_DIR, originalModel), {
+          statusPrefix: `Benchmark selesai, memulihkan ${originalModel}… `,
+        });
+        if (!r.ok) restoreError = `Model awal ${originalModel} gagal dimuat ulang: ${r.error}`;
+      }
+      // Plain status message again (drop the benchmark prefix).
+      if (!restoreError && state.ready) setStatus(`Model siap: ${state.model} (device: ${state.device})`);
+      restored = originalModel;
+    } else if (originalModel) {
+      restoreError = `Model awal ${originalModel} tidak ada lagi di folder models/.`;
+    }
+    bench = null;
+    const done = { type: 'done', cancelled: run.cancelled, restored_model: restored, total_ms: Date.now() - t0 };
+    if (restoreError) done.error = restoreError;
+    log(`Benchmark selesai (${done.total_ms} ms${run.cancelled ? ', dibatalkan' : ''})`);
+    emit(done);
+    if (!res.writableEnded) res.end();
+  }
+});
+
+app.post('/api/benchmark/cancel', (req, res) => {
+  if (bench && !bench.cancelled) {
+    bench.cancelled = true;
+    log('Benchmark: dibatalkan oleh pengguna, berhenti setelah langkah saat ini...');
+  }
+  res.json({ ok: true });
+});
+
+// --- Benchmark export --------------------------------------------------------------------------
+
+const LABEL_TEXT = { positive: 'Positif', neutral: 'Netral', negative: 'Negatif' };
+const LABEL_FILL = { positive: 'FFD9F2D9', negative: 'FFF8D7D7', neutral: 'FFE7E6E6' };
+const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7E6E6' } };
+
+function modelShortName(file) {
+  return String(file ?? '').replace(/\.gguf$/i, '');
+}
+
+// Excel sheet names: max 31 chars, none of []:*?/\ , unique (case-insensitive).
+function uniqueSheetName(base, used) {
+  const clean = String(base).replace(/[[\]:*?/\\]/g, '_').replace(/^'+|'+$/g, '').trim() || 'Model';
+  let name = clean.slice(0, 31);
+  for (let n = 2; used.has(name.toLowerCase()); n++) {
+    const suffix = `~${n}`;
+    name = `${clean.slice(0, 31 - suffix.length)}${suffix}`;
+  }
+  used.add(name.toLowerCase());
+  return name;
+}
+
+// The label compared across models for one result row: the sentiment label if present, otherwise
+// the winner of the first choice question ('' when neither exists).
+function comparableLabel(r) {
+  if (r && typeof r.label === 'string' && r.label) return r.label;
+  const q = questionsOf(r).find((x) => x.type === 'choice');
+  return q ? String(q.winner ?? '') : '';
+}
+
+// Most frequent non-empty label; '' on a tie or when nothing is present.
+function majorityOf(labels) {
+  const counts = new Map();
+  for (const l of labels) if (l) counts.set(l, (counts.get(l) || 0) + 1);
+  let best = '';
+  let bestN = 0;
+  let tie = false;
+  for (const [l, n] of counts) {
+    if (n > bestN) {
+      best = l;
+      bestN = n;
+      tie = false;
+    } else if (n === bestN) tie = true;
+  }
+  return tie ? '' : best;
+}
+
+function fillLabelCell(cell, label) {
+  const argb = LABEL_FILL[label];
+  if (argb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+}
+
+app.post('/api/benchmark/export', async (req, res) => {
+  const body = req.body || {};
+  const runs = Array.isArray(body.runs) ? body.runs.filter(isPlainObject) : [];
+  if (!runs.length) {
+    return res.status(400).json({ error: 'Body harus berisi runs[] (event model_result / model_error / model_skipped).' });
+  }
+  const mode = typeof body.mode === 'string' && (MODES[body.mode] || isQuestionSetMode(body.mode)) ? body.mode : null;
+  if (!mode) return res.status(400).json({ error: `Mode tidak dikenal: ${body.mode}.` });
+  const isSet = isQuestionSetMode(mode);
+  const texts = Array.isArray(body.texts) ? body.texts.map((t) => String(t ?? '')) : [];
+
+  // One row per model, in the order received (the benchmark order).
+  const sizes = Object.fromEntries(listModels().map((m) => [m.file, m.size_mb]));
+  const rows = runs
+    .filter((r) => ['model_result', 'model_error', 'model_skipped'].includes(r.type))
+    .sort((a, b) => num(a.index) - num(b.index));
+  const ok = rows.filter((r) => r.type === 'model_result' && Array.isArray(r.result?.results));
+  const nTexts = texts.length || Math.max(0, ...ok.map((r) => r.result.results.length));
+  const textAt = (t) => texts[t] ?? String(ok.find((r) => r.result.results[t])?.result.results[t]?.text ?? '');
+  const hasSentiment = ok.some((r) => r.result.results.some((x) => typeof x.label === 'string' && x.label));
+  const labelKeys = mode === 'binary' ? ['positive', 'negative'] : LABELS;
+  for (const r of ok) {
+    for (const x of r.result.results) if (hasSentiment && x.label && !labelKeys.includes(x.label)) labelKeys.push(x.label);
+  }
+
+  // Majority label per text across OK models, and each model's agreement with it.
+  const majority = [];
+  for (let t = 0; t < nTexts; t++) majority.push(majorityOf(ok.map((r) => comparableLabel(r.result.results[t]))));
+  const agreement = (r) => {
+    let n = 0;
+    let same = 0;
+    for (let t = 0; t < nTexts; t++) {
+      if (!majority[t]) continue;
+      n++;
+      if (comparableLabel(r.result.results[t]) === majority[t]) same++;
+    }
+    return n ? round4(same / n) : '';
+  };
+  const devices = [...new Set(ok.map((r) => r.device).filter(Boolean))];
+
+  try {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'sentiment-with-decision-model';
+    wb.created = new Date();
+    const used = new Set(['ringkasan', 'perbandingan']);
+
+    // 1. Ringkasan: title block + one row per model.
+    const sum = wb.addWorksheet('Ringkasan');
+    const title = [
+      ['Benchmark model', ''],
+      ['Tanggal', new Date().toLocaleString('id-ID')],
+      ['Mode', mode],
+    ];
+    if (mode === PRESET_MODE) title.push(['Preset', `${body.preset ?? ''}${body.preset_title ? ` (${body.preset_title})` : ''}`]);
+    if (mode === CUSTOM_MODE) {
+      title.push(['Template', `${body.template_id ?? '(belum disimpan)'}${body.template_title ? ` (${body.template_title})` : ''}`]);
+    }
+    title.push(['Jumlah teks', nTexts], ['Perangkat', devices.join(', ') || '-']);
+    for (const [k, v] of title) sum.addRow([k, v]);
+    sum.getCell('A1').font = { bold: true, size: 14 };
+    for (let r = 2; r <= title.length; r++) sum.getCell(`A${r}`).font = { bold: true };
+    sum.addRow([]);
+
+    const cols = [
+      ['No', 5],
+      ['Model', 38],
+      ['Ukuran MB', 11],
+      ['Status', 30],
+      ['Perangkat', 11],
+      ['Muat (ms)', 10],
+      ['Analisis (ms)', 13],
+      ['ms/teks', 10],
+      ['Rata-rata skor', 14],
+    ];
+    if (hasSentiment) for (const l of labelKeys) cols.push([LABEL_TEXT[l] ?? l, 10]);
+    cols.push(['Kesepakatan dengan mayoritas (%)', 18], ['Error', 60]);
+    const headerRow = sum.addRow(cols.map((c) => c[0]));
+    const headerNo = headerRow.number;
+    headerRow.font = { bold: true };
+    headerRow.alignment = { wrapText: true, vertical: 'middle' };
+    headerRow.eachCell((c) => (c.fill = HEADER_FILL));
+    cols.forEach(([, w], i) => (sum.getColumn(i + 1).width = w));
+    sum.getColumn(1).width = Math.max(14, cols[0][1]); // also holds the title block labels
+
+    rows.forEach((r, i) => {
+      const file = String(r.file ?? '');
+      const size = r.size_mb ?? sizes[file] ?? '';
+      let status;
+      if (r.type === 'model_result') status = 'OK';
+      else if (r.type === 'model_skipped') status = `Duplikat dari ${r.duplicate_of ?? '?'}`;
+      else status = 'Gagal';
+      const res0 = r.type === 'model_result' ? r.result : null;
+      const vals = [
+        i + 1,
+        file,
+        size,
+        status,
+        r.device ?? '',
+        res0 ? num(r.load_ms) : '',
+        res0 ? num(r.score_ms) : '',
+        res0 ? num(r.ms_per_text) : '',
+        res0 && res0.average?.score !== null && res0.average?.score !== undefined ? num(res0.average.score) : '',
+      ];
+      if (hasSentiment) {
+        for (const l of labelKeys) vals.push(res0 ? res0.results.filter((x) => x.label === l).length : '');
+      }
+      vals.push(res0 && ok.includes(r) ? agreement(r) : '');
+      vals.push(r.type === 'model_error' ? `${r.stage ? `[${r.stage}] ` : ''}${r.error ?? ''}` : '');
+      const row = sum.addRow(vals);
+      row.alignment = { vertical: 'top' };
+      row.getCell(cols.length).alignment = { wrapText: true, vertical: 'top' };
+      if (status === 'OK') row.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LABEL_FILL.positive } };
+      else if (status === 'Gagal') row.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LABEL_FILL.negative } };
+    });
+    const lastRow = headerNo + rows.length;
+    for (let r = headerNo + 1; r <= lastRow; r++) {
+      sum.getCell(r, 3).numFmt = '0.0';
+      for (const c of [6, 7, 8]) sum.getCell(r, c).numFmt = '0';
+      sum.getCell(r, 9).numFmt = '0.000';
+      sum.getCell(r, cols.length - 1).numFmt = '0.0%';
+    }
+    sum.views = [{ state: 'frozen', ySplit: headerNo }];
+    sum.autoFilter = { from: { row: headerNo, column: 1 }, to: { row: lastRow, column: cols.length } };
+
+    // 2. Perbandingan: one row per text, per OK model label + score (and question headlines).
+    const cmp = wb.addWorksheet('Perbandingan', { views: [{ state: 'frozen', xSplit: 2, ySplit: 1 }] });
+    const cmpCols = [
+      { header: 'No', width: 5 },
+      { header: 'Teks', width: 50 },
+    ];
+    if (hasSentiment) cmpCols.push({ header: 'Mayoritas', width: 12, kind: 'majority' });
+    for (const r of ok) {
+      const short = modelShortName(r.file);
+      const { order } = questionOrder(r.result.results);
+      if (hasSentiment) {
+        cmpCols.push({ header: `${short} · label`, width: 14, kind: 'label', run: r });
+        cmpCols.push({ header: `${short} · skor`, width: 12, kind: 'score', run: r });
+      }
+      if (isSet) {
+        for (const qid of order.filter((id) => id !== 'sentiment')) {
+          cmpCols.push({ header: `${short} · ${qid}`, width: Math.max(14, qid.length + 6), kind: 'question', run: r, qid });
+        }
+      }
+    }
+    cmp.columns = cmpCols.map((c) => ({ header: c.header, width: c.width }));
+    const cmpHead = cmp.getRow(1);
+    cmpHead.font = { bold: true };
+    cmpHead.alignment = { wrapText: true, vertical: 'middle' };
+    cmpHead.eachCell((c) => (c.fill = HEADER_FILL));
+    for (let t = 0; t < nTexts; t++) {
+      const vals = cmpCols.map((c, ci) => {
+        if (ci === 0) return t + 1;
+        if (ci === 1) return textAt(t);
+        if (c.kind === 'majority') return majority[t] || '(seri)';
+        const x = c.run.result.results[t];
+        if (!x) return '';
+        if (c.kind === 'label') return String(x.label ?? '');
+        if (c.kind === 'score') return x.score === null || x.score === undefined ? '' : num(x.score);
+        return headlineCell(questionsOf(x).find((q) => q.id === c.qid));
+      });
+      const row = cmp.addRow(vals);
+      row.alignment = { vertical: 'top' };
+      row.getCell(2).alignment = { wrapText: true, vertical: 'top' };
+      cmpCols.forEach((c, ci) => {
+        const cell = row.getCell(ci + 1);
+        if (c.kind === 'label' || c.kind === 'majority') fillLabelCell(cell, cell.value);
+        if (c.kind === 'score' || (c.kind === 'question' && typeof cell.value === 'number')) cell.numFmt = '0.000';
+      });
+    }
+    if (nTexts) cmp.autoFilter = { from: { row: 1, column: 1 }, to: { row: nTexts + 1, column: cmpCols.length } };
+
+    // 3. One sheet per OK model, same per-text rows as the normal export's Results sheet.
+    for (const r of ok) {
+      const name = uniqueSheetName(modelShortName(r.file), used);
+      const results = r.result.results;
+      const hasSent = !isSet || results.some((x) => questionsOf(x).some((q) => q.id === 'sentiment'));
+      const average = isPlainObject(r.result.average) ? r.result.average : buildAverage(results, mode, hasSent);
+      if (isSet) addPresetResultsSheet(wb, name, { results, average });
+      else addSentimentResultsSheet(wb, name, { results, average, mode });
+    }
+
+    const buf = await wb.xlsx.writeBuffer();
+    const filename = `benchmark-${mode}-${timestamp()}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(Buffer.from(buf));
+  } catch (err) {
+    log(`Benchmark export error: ${err.message}`);
+    res.status(500).json({ error: `Gagal membuat file Excel: ${err.message}` });
+  }
+});
 
 // Plain http server instead of app.listen(): Express 5 routes listen errors into the
 // once-only callback, which would break retrying the next port.
