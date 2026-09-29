@@ -1,0 +1,29 @@
+{
+  "id": "sentimen-sarkasme",
+  "title": "Sentimen + deteksi sarkasme",
+  "description": "Cek apakah ulasan bernada sarkas dan tentukan sikap asli penulis.",
+  "state_key": "transcript",
+  "extra_state": {},
+  "include_sentiment": true,
+  "questions": {
+    "sarcasm": {
+      "type": "noul",
+      "instructions": "Is the writer being sarcastic, praising something while actually criticizing it?",
+      "criteria": {
+        "false": "the praise or complaint is meant literally",
+        "true": "the praise is ironic, e.g. exaggerated praise followed by a complaint or refusal to buy again"
+      }
+    },
+    "real_attitude": {
+      "type": "choice",
+      "instructions": "Taking sarcasm and slang into account, what is the writer's REAL attitude toward the product or service?",
+      "criteria": {
+        "positif": "genuinely satisfied or recommends it",
+        "campuran": "clear good and bad points",
+        "negatif": "genuinely dissatisfied, disappointed, or would not buy again"
+      }
+    }
+  },
+  "builtin": true,
+  "updated_at": "2026-09-29T00:00:00.000Z"
+}
