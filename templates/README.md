@@ -1,7 +1,7 @@
 # Template pertanyaan
 
 > Status: Draft
-> Terakhir diperbarui: 2026-09-28
+> Terakhir diperbarui: 2026-09-29
 > Pemilik: _TBD_
 
 Folder ini berisi template untuk mode **custom** (editor preset di UI). Setiap template disimpan
@@ -73,6 +73,7 @@ ditulis dalam bahasa Inggris. Bahasa Indonesia juga bisa. Teks yang dinilai bole
 | `ulasan-produk` | Sentimen, aspek (kualitas/harga/pengiriman/pelayanan/lainnya), `would_recommend`, `complaint`, dan `rating` bintang 1-5. |
 | `keluhan-pelanggan` | Kategori, `urgency` (3 level), `churn_risk`, `refund_requested`, `needs_reply`, dan `emotion` (marah/kecewa/netral/senang). |
 | `moderasi-komentar` | `toxic`, `harassment`, `hate`, `spam`, dan `severity` (3 level). |
+| `percakapan-cs` | Transkrip chat pelanggan–agen (`state_key` = `transcript`; baris diawali `Pelanggan:` / `Agen:`). Sentimen, `intent` (8 kategori), `resolution_status`, `next_action`, `needs_escalation`, `urgency` (3 level), `agent_quality` (4 level), `churn_risk`, dan `final_emotion` (marah/kecewa/netral/puas). `extra_state` opsional: `channel`, `customer_tier`. |
 | `email-triage` | Salinan preset `email` Laya. Isi `from`/`subject` di `extra_state` agar hasilnya lebih mirip Studio. |
 
 ## API

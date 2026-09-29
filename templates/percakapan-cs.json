@@ -1,0 +1,97 @@
+{
+  "id": "percakapan-cs",
+  "title": "Percakapan customer service",
+  "description": "Analisis transkrip chat antara pelanggan dan agen CS: maksud pelanggan, status penyelesaian, langkah berikutnya, perlu eskalasi, urgensi, kualitas agen, risiko churn, dan emosi pelanggan di akhir percakapan.",
+  "state_key": "transcript",
+  "extra_state": {
+    "channel": "",
+    "customer_tier": ""
+  },
+  "include_sentiment": true,
+  "questions": {
+    "intent": {
+      "type": "choice",
+      "instructions": "What does the customer mainly want in this conversation?",
+      "criteria": {
+        "info": "asks for information, a price, how-to, or product details",
+        "gangguan": "reports a technical problem, outage, error, or something not working",
+        "tagihan": "billing, payment, double charge, invoice, or refund",
+        "pengiriman": "order status, late, lost, or damaged delivery",
+        "akun": "login, password, account access, or changing personal data",
+        "berhenti": "wants to cancel, unsubscribe, or close the account",
+        "komplain_layanan": "complains about staff, response time, or how they were treated",
+        "lainnya": "anything else, greetings, or small talk"
+      }
+    },
+    "resolution_status": {
+      "type": "choice",
+      "instructions": "At the end of the conversation, is the customer's issue resolved?",
+      "criteria": {
+        "selesai": "the issue is solved and the customer confirms or accepts it",
+        "dalam_proses": "the agent is working on it or promised a follow-up",
+        "menunggu_pelanggan": "the agent is waiting for data, a photo, or a reply from the customer",
+        "belum_selesai": "the issue is not solved and there is no clear next step"
+      }
+    },
+    "next_action": {
+      "type": "choice",
+      "instructions": "What should the support team do next?",
+      "criteria": {
+        "tutup_tiket": "close the ticket, nothing left to do",
+        "beri_jawaban": "answer the customer's question or give instructions",
+        "minta_data": "ask the customer for more details or proof",
+        "cek_teknis": "open a technical check or send a technician",
+        "proses_refund": "process a refund, compensation, or replacement",
+        "eskalasi": "hand over to a supervisor, specialist, or another team",
+        "follow_up": "contact the customer again later to confirm"
+      }
+    },
+    "needs_escalation": {
+      "type": "noul",
+      "instructions": "Should this conversation be escalated to a supervisor or specialist?",
+      "criteria": {
+        "false": "the front-line agent can handle it",
+        "true": "the customer asks for a manager, threatens legal action or going viral, or the agent cannot solve it"
+      }
+    },
+    "urgency": {
+      "type": "score",
+      "instructions": "How urgent is the customer's issue?",
+      "criteria": [
+        "low: a question or feedback with no time pressure",
+        "medium: needs handling within a day",
+        "high: service down, money lost, or the customer is blocked right now"
+      ]
+    },
+    "agent_quality": {
+      "type": "score",
+      "instructions": "How well did the agent handle the conversation (polite, clear, helpful, fast)? If there is no agent reply, answer average.",
+      "criteria": [
+        "poor: rude, wrong, or ignores the customer",
+        "average: polite but generic or incomplete",
+        "good: polite, clear, and moves the issue forward",
+        "excellent: empathetic, precise, and solves the issue"
+      ]
+    },
+    "churn_risk": {
+      "type": "noul",
+      "instructions": "Does the customer threaten or hint that they will cancel, stop using the service, or switch to a competitor?",
+      "criteria": {
+        "false": "no sign the customer will leave",
+        "true": "the customer threatens or hints to cancel, leave, or switch"
+      }
+    },
+    "final_emotion": {
+      "type": "choice",
+      "instructions": "What is the customer's emotion at the END of the conversation?",
+      "criteria": {
+        "marah": "angry, furious, harsh words",
+        "kecewa": "disappointed or frustrated but calm",
+        "netral": "calm and factual",
+        "puas": "satisfied, relieved, or thankful"
+      }
+    }
+  },
+  "builtin": true,
+  "updated_at": "2026-09-29T00:00:00.000Z"
+}

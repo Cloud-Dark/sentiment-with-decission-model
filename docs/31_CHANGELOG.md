@@ -10,6 +10,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/). Ve
 
 ### Added
 
+- Template bawaan `percakapan-cs` untuk analisis percakapan customer service (maksud pelanggan, status penyelesaian, langkah berikutnya, eskalasi, urgensi, kualitas agen, risiko churn, emosi akhir, dan sentimen).
 - Benchmark model ([FR-015](03_FRD.md#fr-015-benchmark-model)): `POST /api/benchmark` (streaming NDJSON; memuat setiap model di `models/` secara bergantian, melewati berkas duplikat berdasarkan md5, melanjutkan saat ada model rusak, lalu memulihkan model awal), `POST /api/benchmark/cancel`, dan `POST /api/benchmark/export` (XLSX dengan sheet `Ringkasan`, `Perbandingan`, dan satu sheet per model). `/api/status` memuat field `benchmark`.
 - Snapshot preset laya `presets/laya-presets.json` (salinan `GET /v1/presets`, 10 preset) beserta `presets/README.md`.
 - `scripts/sync-presets.js` dan skrip npm `presets:sync` untuk memperbarui snapshot setelah upgrade laya.
