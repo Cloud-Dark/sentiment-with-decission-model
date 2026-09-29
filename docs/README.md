@@ -56,6 +56,7 @@ Penamaan berkas mengikuti [standar dokumentasi](standards/06_DOCUMENTATION_STAND
 | [specs/2026-09-28-preset-template-editor-design.md](specs/2026-09-28-preset-template-editor-design.md) | Desain editor preset/template |
 | [plans/2026-09-28-preset-template-editor.md](plans/2026-09-28-preset-template-editor.md) | Rencana implementasi editor preset/template |
 | [uat/2026-09-28_preset-template-uat.md](uat/2026-09-28_preset-template-uat.md) | Hasil UAT editor preset/template |
+| [uat/2026-09-29_model-comparison-uat.md](uat/2026-09-29_model-comparison-uat.md) | Perbandingan 7 berkas model GGUF dengan data uji yang sama |
 
 ## README lain di repositori
 
