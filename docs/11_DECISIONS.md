@@ -23,12 +23,14 @@ Setiap ADR berstatus **Diterima** dan tercermin di kode pada commit `dcc4574` at
 - **Konteks**: Port 3000 atau 8089 dapat sudah dipakai, termasuk oleh instance kedua aplikasi ini. Di Express 5, `app.listen()` meneruskan galat listen ke callback yang hanya dipanggil sekali, sehingga mencoba port berikutnya tidak berfungsi.
 - **Keputusan**: Pakai `http.createServer(app)` dengan handler `error`. Jika `EADDRINUSE` dan `PORT` tidak diset, coba port berikutnya hingga 20 kali. Untuk laya, periksa port dengan koneksi TCP (`isPortFree`) dan naikkan hingga 20 kali jika `LAYA_PORT` tidak diset.
 - **Konsekuensi**: Aplikasi dapat berjalan berdampingan tanpa konfigurasi. Port aktual dicetak di konsol ("Buka http://localhost:<port>"). Port eksplisit yang sibuk dianggap galat.
+- **Revisi 2026-09-29**: Bagian laya (`isPortFree`, `LAYA_PORT`) dihapus oleh [ADR-010](#adr-010-laya-daemon-via-stdio-alih-alih-serve). Fallback port kini hanya berlaku untuk port web.
 
 ## ADR-004: Endpoint batch dengan fallback per teks
 
 - **Konteks**: `/v1/decide/batch` jauh lebih efisien, tetapi bentuk responsnya diverifikasi dari `server.cpp` laya dan dapat berbeda di versi lain.
 - **Keputusan**: Coba batch terlebih dahulu (timeout 10 menit). Jika gagal, jumlah hasil tidak sama, atau ada hasil tanpa `answers`, catat log lalu panggil `/v1/decide` per teks secara berurutan.
 - **Konsekuensi**: Tangguh terhadap perbedaan versi; jalur fallback lebih lambat. Galat yang sebenarnya dari laya (misalnya 422) dapat memicu fallback yang juga gagal, sehingga pesan akhir berasal dari panggilan per teks.
+- **Status 2026-09-29**: Digantikan oleh [ADR-010](#adr-010-laya-daemon-via-stdio-alih-alih-serve). Daemon tidak memiliki batch; semua teks dikirim satu per satu.
 
 ## ADR-005: Template sebagai berkas JSON, bawaan hanya-baca
 
@@ -60,3 +62,21 @@ Setiap ADR berstatus **Diterima** dan tercermin di kode pada commit `dcc4574` at
 - **Keputusan**: Seluruh UI (HTML, CSS, JavaScript ES5) berada di `public/index.html`, tanpa CDN, font, atau library eksternal. Ikon favicon berupa data URI. DOM dibangun lewat `textContent`.
 - **Konsekuensi**: Tidak ada dependensi frontend dan tidak ada build. Berkas besar sehingga lebih sulit dipelihara; tidak ada modul atau tes unit frontend.
 - **Revisi 2026-09-29**: Tampilan mengadopsi gaya "Editorial Brutalism / Operator's Desk" dan memuat font Bricolage Grotesque, Hanken Grotesk, dan JetBrains Mono dari Google Fonts. Saat luring, halaman tetap berfungsi dengan font sistem sebagai fallback; tidak ada library JavaScript eksternal.
+
+## ADR-010: laya daemon via stdio alih-alih serve
+
+- **Status**: Diterima (2026-09-29, belum di-commit saat ditulis).
+- **Konteks**: Aplikasi sebelumnya membuka dua port: port web (bawaan 3000, sering 3001 karena fallback) dan port `laya serve` (bawaan 8089, sering 8090). Pengguna tidak menginginkan dua port. ggmlc v0.9.6 menyediakan `laya.exe daemon <gguf> --device X` yang menerima permintaan JSON per baris lewat stdin dan menulis jawaban JSON per baris ke stdout, tanpa membuka port.
+- **Keputusan**:
+  - `server.js` menjalankan `laya.exe daemon` dan berkomunikasi lewat stdio. Kesiapan ditandai baris `{"status":"ready"}`. Permintaan diberi `id` angka dan dicocokkan dengan `String(id)`; antrean per proses menjaga satu permintaan berjalan, dengan timeout per permintaan dan penolakan semua permintaan tertunda saat proses berhenti.
+  - `LAYA_PORT`, pemeriksaan port laya (`isPortFree`), dan polling `/health` dihapus. Fallback CPU, pemilihan GPU lewat `laya info`, dan penggantian model tetap sama.
+  - Karena daemon tidak dapat menampilkan daftar preset, definisi preset (`GET /v1/presets`) disimpan sebagai snapshot `presets/laya-presets.json` yang di-commit dan dibaca saat boot. Skrip `npm run presets:sync` (`scripts/sync-presets.js`) memperbaruinya dengan menjalankan `laya serve` sementara pada port acak bebas di `127.0.0.1`, lalu menghentikannya.
+  - Penilaian preset mengirim `questions` eksplisit dari snapshot (bukan field `preset` daemon) agar `extra_state` dan `include_sentiment` tetap berperilaku sama.
+- **Konsekuensi**:
+  - Aplikasi hanya membuka satu port (web). Proses laya tidak memiliki soket TCP. Jika server Node mati paksa, daemon keluar sendiri karena stdin-nya tertutup.
+  - Tidak ada batch: teks dinilai berurutan. Terukur pada GTX 1650 (`vulkan:1`, `q8_0`, `sentiment3`): 4 teks 171-172 ms (UAT batch sebelumnya 191-212 ms; batch `serve` diukur ulang 172 ms), 50 teks 2,1-3,2 detik (batch `serve` diukur ulang 2,1-3,0 detik). Tidak ada regresi berarti pada ukuran ini.
+  - Snapshot preset dapat tertinggal dari versi laya. Setelah upgrade laya, jalankan `npm run presets:sync` dan periksa diff ([R-15](10_RISK_REGISTER.md)).
+  - `usage` per permintaan dijumlahkan dan kini dikembalikan pada respons `/api/score`.
+- **Alternatif yang ditolak**:
+  - Tetap memakai `laya serve` yang diikat ke `127.0.0.1`: port kedua tetap ada, tetap dapat bentrok dengan instance lain, dan tidak memenuhi permintaan pengguna.
+  - `laya serve` pada port efemeral (port 0/acak): port kedua tetap terbuka walau berubah-ubah, masih perlu deteksi port dan polling `/health`, serta menyulitkan diagnosis.

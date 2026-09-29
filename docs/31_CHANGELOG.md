@@ -10,13 +10,23 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/). Ve
 
 ### Added
 
+- Snapshot preset laya `presets/laya-presets.json` (salinan `GET /v1/presets`, 10 preset) beserta `presets/README.md`.
+- `scripts/sync-presets.js` dan skrip npm `presets:sync` untuk memperbarui snapshot setelah upgrade laya.
+- Respons `/api/score` memuat `usage` (`input_tokens`, `output_tokens`, `latency_ms`, `total_tokens`) yang dijumlahkan dari seluruh permintaan per teks.
+- ADR-010 dan risiko R-15 (drift snapshot preset).
 - Dokumentasi proyek di `docs/` (indeks, charter, PRD, FRD, TRD, arsitektur, rencana, checklist, roadmap, risiko, ADR, strategi uji, glosarium, referensi konfigurasi, setup, backend, frontend, standar, spesifikasi, rencana, dan UAT editor preset/template).
 - `public/README.md` dan `scripts/README.md`.
 
 ### Changed
 
+- `server.js` menjalankan `laya.exe daemon` (stdin/stdout, JSON per baris) alih-alih `laya.exe serve`. Aplikasi kini hanya membuka port web. Penilaian dilakukan per teks secara berurutan karena daemon tidak memiliki batch; bentuk respons `/api/*` lainnya tidak berubah ([ADR-010](11_DECISIONS.md#adr-010-laya-daemon-via-stdio-alih-alih-serve)).
+- Definisi preset dibaca dari snapshot saat boot, bukan dari `/v1/presets` laya.
 - Tampilan `public/index.html` dirombak ke gaya Editorial Brutalism: header sticky dengan status model, toggle tema terang/gelap, footer, tombol kembali ke atas, strip ringkasan hasil, dan kartu hasil multi-kolom (1/2/3 kolom sesuai lebar layar).
 - `models/README.md` dan `templates/README.md` diberi blok header status dokumen; isi tidak diubah.
+
+### Removed
+
+- Variabel lingkungan `LAYA_PORT`, pemeriksaan port laya (`isPortFree` untuk laya), polling `/health`, dan pemanggilan `/v1/decide/batch`.
 
 ## [bf78ba9] - 2026-09-28
 

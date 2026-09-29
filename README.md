@@ -32,13 +32,14 @@ Model boleh ditaruh setelah server jalan; server mengecek `models/` tiap 5 detik
 | Variabel | Default | Keterangan |
 | :--- | :--- | :--- |
 | `PORT` | `3000` | Port web app |
-| `LAYA_PORT` | `8089` | Port internal `laya.exe serve` |
 | `LAYA_DEVICE` | `auto` | `auto` (pilih GPU diskrit/NVIDIA otomatis), `vulkan:0`, `vulkan:1`, `cpu` |
 | `LAYA_MODEL` | – | Path file `.gguf` tertentu (default: pilih otomatis q8_0 > ud_q4_k_m > f16) |
 
 Contoh PowerShell: `$env:LAYA_DEVICE='vulkan:1'; npm start`
 
 Jika laya crash di GPU, server otomatis mencoba sekali lagi dengan `--device cpu`.
+
+Aplikasi hanya membuka port web. laya berjalan sebagai `laya.exe daemon` lewat stdin/stdout tanpa port (`LAYA_PORT` sudah dihapus). Definisi preset laya disimpan di `presets/laya-presets.json`; setelah upgrade laya jalankan `npm run presets:sync`.
 
 ## API
 

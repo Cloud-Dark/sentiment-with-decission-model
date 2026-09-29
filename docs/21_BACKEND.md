@@ -1,10 +1,10 @@
 # Backend
 
 > Status: Draft
-> Terakhir diperbarui: 2026-09-28
+> Terakhir diperbarui: 2026-09-29
 > Pemilik: _TBD_
 
-Backend adalah satu berkas `server.js` (Express 5). Tugasnya: menyajikan `public/`, mengelola proses anak `laya serve`, dan menyediakan API `/api/*`. Arsitektur ada di [05_ARCHITECTURE.md](05_ARCHITECTURE.md); konfigurasi di [16_CONFIG_REFERENCE.md](16_CONFIG_REFERENCE.md).
+Backend adalah satu berkas `server.js` (Express 5). Tugasnya: menyajikan `public/`, mengelola proses anak `laya daemon` (stdin/stdout, tanpa port), dan menyediakan API `/api/*`. Arsitektur ada di [05_ARCHITECTURE.md](05_ARCHITECTURE.md); konfigurasi di [16_CONFIG_REFERENCE.md](16_CONFIG_REFERENCE.md).
 
 ## Konvensi umum
 
@@ -63,11 +63,11 @@ Permintaan: `{"file": "laya_multilingual_ud_q4_k_m.gguf"}`. Nilai harus nama ber
 | 400 | Nama berkas tidak valid | `{"error": "File model tidak valid. ...", ...status}` |
 | 503 | `bin/laya.exe` belum ada | `{"error": "laya.exe belum siap, coba lagi nanti.", ...status}` |
 
-Proses penggantian: hentikan proses lama (tunggu 15 detik, lalu `taskkill /T /F`), tunggu port bebas, deteksi GPU, jalankan laya dengan model baru.
+Proses penggantian: hentikan proses lama (tutup stdin, `kill()` setelah 3 detik, `taskkill /T /F` setelah 15 detik; permintaan tertunda ditolak), deteksi GPU, jalankan daemon dengan model baru, lalu tunggu baris ready.
 
 ## GET /api/presets
 
-Daftar preset dari laya `/v1/presets`, di-cache per model dan generasi proses.
+Daftar preset dari snapshot `presets/laya-presets.json` (salinan `GET /v1/presets` laya, dibaca sekali saat boot; diperbarui dengan `npm run presets:sync`). Endpoint tetap mengembalikan 503 saat model belum siap. Jika snapshot tidak dapat dibaca, endpoint preset mengembalikan 502 `Gagal memuat preset: ...`.
 
 ```json
 [
@@ -75,11 +75,11 @@ Daftar preset dari laya `/v1/presets`, di-cache per model dan generasi proses.
 ]
 ```
 
-Nilai `title`/`blurb` berasal dari laya; contoh di atas ilustratif.
+Nilai `title`/`blurb` berasal dari snapshot preset laya; contoh di atas ilustratif.
 
 ## GET /api/presets/:name
 
-Preset lengkap untuk dimuat ke editor. `state` adalah contoh state dari laya; UI memakainya sebagai placeholder `extra_state`.
+Preset lengkap untuk dimuat ke editor. `state` adalah contoh state dari snapshot preset laya; UI memakainya sebagai placeholder `extra_state`.
 
 ```json
 {
@@ -201,6 +201,7 @@ Contoh respons (dipersingkat):
   ],
   "average": { "score": 0.93, "label": "positive", "value": 0.93, "count": 1, "options": [], "confidence": 0.95, "questions": [] },
   "latency_ms": 180,
+  "usage": { "input_tokens": 341, "output_tokens": 0, "latency_ms": 175.2, "total_tokens": 341 },
   "template_id": "ulasan-produk",
   "template_title": "Ulasan produk",
   "extra_state": {}
@@ -214,6 +215,7 @@ Angka di atas ilustratif. Catatan bentuk:
 - Preset/custom tanpa sentimen: `label`, `score`, `value`, `confidence`, `act`, `options` bernilai `null`, dan `average` hanya berisi `count` dan `questions` selain field null tersebut.
 - `headline`: kunci pemenang (`choice`), `P(true)=0.xxxx` (`noul`), atau level harapan (`score`).
 - `template_id`/`template_title` hanya ada pada `custom`; `extra_state` pada `preset` dan `custom`.
+- `latency_ms` adalah waktu total di server. `usage` adalah jumlah `usage` dari setiap permintaan daemon (satu per teks); `usage.latency_ms` hanya waktu inferensi laya. `total_tokens` = `input_tokens` + `output_tokens`, dipakai UI untuk meta "N token".
 
 Aturan skor per mode:
 
@@ -229,7 +231,7 @@ Aturan skor per mode:
 | 502 | `Gagal memuat preset: ...`; `Gagal menilai teks: ...` |
 | 503 | Model belum siap atau sedang diganti |
 
-Pemanggilan laya: `/v1/decide/batch` terlebih dahulu, lalu fallback `/v1/decide` per teks ([ADR-004](11_DECISIONS.md#adr-004-endpoint-batch-dengan-fallback-per-teks)). State per teks: `{...extra_state tanpa nilai "", [state_key]: teks}`.
+Pemanggilan laya: satu permintaan daemon `{"id", "state", "questions"}` per teks, berurutan, dengan timeout 120 detik per teks ([ADR-010](11_DECISIONS.md#adr-010-laya-daemon-via-stdio-alih-alih-serve)). Mode preset mengirim `questions` eksplisit dari snapshot. Galat daemon `{"id","error"}` menjadi 502 dengan pesan `laya: <pesan>`. State per teks: `{...extra_state tanpa nilai "", [state_key]: teks}`.
 
 ## POST /api/export
 
@@ -253,8 +255,9 @@ Galat: 400 `Body harus berupa respons /api/score (results[]).`; 500 `Gagal membu
 
 1. Unduh `bin/laya.exe` jika belum ada.
 2. Tunggu model di `models/` (polling 5 detik) dan tunggu ukuran berkas stabil.
-3. Tentukan port laya dan perangkat (`laya info`).
-4. `laya serve <model> --port <LAYA_PORT> --device <dev>` dengan cwd `bin/`.
-5. Polling health tiap 1 detik, timeout 10 menit.
-6. Jika crash pada perangkat non-CPU, ulangi sekali dengan `cpu`.
-7. Saat server berhenti, proses anak dihentikan.
+3. Tentukan perangkat (`laya info` bila `auto`).
+4. `laya daemon <model> --device <dev>` dengan cwd `bin/` dan stdio `pipe`. Tidak ada port.
+5. Tunggu baris stdout `{"status":"ready"}`, timeout 10 menit. Device yang dilaporkan adalah device yang diminta.
+6. Permintaan dikirim satu per satu lewat stdin (antrean per proses) dan dicocokkan dengan `String(id)`. Baris stdout non-JSON dicatat dengan prefiks `[laya]`, stderr dengan `[laya!]`.
+7. Jika crash pada perangkat non-CPU, ulangi sekali dengan `cpu`. Permintaan tertunda saat proses berhenti ditolak.
+8. Saat server berhenti, stdin ditutup lalu proses anak dihentikan. Jika server Node mati paksa, daemon keluar sendiri karena stdin tertutup.

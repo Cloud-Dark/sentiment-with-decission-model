@@ -1,7 +1,7 @@
 # Glosarium
 
 > Status: Draft
-> Terakhir diperbarui: 2026-09-28
+> Terakhir diperbarui: 2026-09-29
 > Pemilik: _TBD_
 
 | Istilah | Definisi |
@@ -23,7 +23,7 @@
 | include_sentiment | Opsi menyertakan pertanyaan sentimen tiga kelas dengan id `sentiment` pada mode preset/custom. Bawaan `true` kecuali bernilai `false`. |
 | instructions | Teks pertanyaan yang diberikan ke model (wajib, maksimal 1000 karakter). |
 | label | Hasil kategori sentimen: `positive`, `neutral`, atau `negative`. |
-| laya | Server keputusan (`laya serve`) yang menjalankan model Laya dan menyediakan API HTTP di `127.0.0.1`. |
+| laya | Mesin keputusan yang menjalankan model Laya. Aplikasi memakainya sebagai proses anak `laya daemon` lewat stdin/stdout (JSON per baris, tanpa port); `laya serve` (API HTTP) hanya dipakai sementara oleh `npm run presets:sync`. |
 | max_opts | Batas jumlah opsi per pertanyaan pada model, yaitu 16 (`MAX_OPTS`). |
 | noul | Tipe pertanyaan ya/tidak. Jawaban `noul` berupa P(true). |
 | preset | Kumpulan pertanyaan bawaan laya (`/v1/presets`), misalnya `email`. Dipakai lewat mode `preset`. |

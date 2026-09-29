@@ -2,17 +2,18 @@
 
 // Sentiment scoring backend.
 // - Serves the static frontend from public/
-// - Manages a child `laya.exe serve` process (ggmlc Laya decision model, TypeSafe-compatible API)
+// - Manages a child `laya.exe daemon` process (ggmlc Laya decision model) over stdin/stdout JSON
+//   lines; laya opens no port, so the web port is the only one the app listens on
 // - Exposes /api/status, /api/model, /api/presets[/:name], /api/templates[/:id], /api/score, /api/export
 // - Scoring modes: sentiment3 (choice), binary (noul), scale5 (score rubric 1..5), "preset"
-//   (a laya /v1/presets question set, optionally plus the sentiment3 question) and "custom"
+//   (a question set from the presets/laya-presets.json snapshot of laya /v1/presets, optionally
+//   plus the sentiment3 question) and "custom"
 //   (a template from templates/<id>.json or an unsaved inline one; same output shape as preset)
 // - Every result carries a generic questions[] array so the UI can render any mode the same way
 
 const fs = require('fs');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
-const net = require('net');
 const express = require('express');
 const ExcelJS = require('exceljs');
 const { setup, EXE_PATH } = require('./scripts/setup');
@@ -22,13 +23,12 @@ const MODELS_DIR = path.join(ROOT, 'models');
 const PORT = Number(process.env.PORT) || 3000;
 // When a port is not set explicitly and is busy, try the next few ports instead of failing.
 const PORT_TRIES = 20;
-let LAYA_PORT = Number(process.env.LAYA_PORT) || 8089;
 const LAYA_DEVICE = process.env.LAYA_DEVICE || 'auto';
-const LAYA_HOST = '127.0.0.1';
-const MAX_TEXTS = 256; // laya /v1/decide/batch limit
+const MAX_TEXTS = 256; // kept from the old laya /v1/decide/batch limit
 const MODEL_POLL_MS = 5000;
-const HEALTH_POLL_MS = 1000;
-const HEALTH_TIMEOUT_MS = 10 * 60 * 1000; // model load on first run can be slow
+const READY_TIMEOUT_MS = 10 * 60 * 1000; // model load on first run can be slow
+const REQUEST_TIMEOUT_MS = 2 * 60 * 1000; // one daemon request (one text)
+const PRESETS_FILE = path.join(ROOT, 'presets', 'laya-presets.json');
 
 // Average label thresholds: the average score is mean(P(pos) - P(neg)) in [-1, 1].
 //   avg >  0.15  -> positive
@@ -44,7 +44,7 @@ const SCALE_NEGATIVE_THRESHOLD = 2.5;
 const LABELS = ['positive', 'neutral', 'negative'];
 
 // Every sentiment mode asks a single question with id "sentiment" against state {"text": t}.
-// (Preset mode is not in this table: its questions come from laya /v1/presets.)
+// (Preset mode is not in this table: its questions come from presets/laya-presets.json.)
 // Each mode defines:
 //   question        - laya/TypeSafe question definition
 //   options         - [{key, text}] in rubric order (text in Bahasa Indonesia, shown in UI + Excel)
@@ -231,65 +231,40 @@ function pipeLogs(stream, prefix) {
   });
 }
 
-async function fetchJson(url, opts = {}, timeoutMs = 120000) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { ...opts, signal: ctrl.signal });
-    const text = await res.text();
-    let body;
-    try {
-      body = text ? JSON.parse(text) : null;
-    } catch {
-      body = { raw: text };
-    }
-    if (!res.ok) {
-      const msg = body?.error?.message || body?.message || text || res.statusText;
-      const err = new Error(`laya HTTP ${res.status}: ${msg}`);
-      err.status = res.status;
-      throw err;
-    }
-    return body;
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-// Returns true if nothing is listening on host:port. Used so we never mistake
-// another laya instance (e.g. a second copy of this app) for our own child.
-function isPortFree(port, host = LAYA_HOST) {
-  return new Promise((resolve) => {
-    const sock = net.connect({ port, host });
-    sock.once('connect', () => {
-      sock.destroy();
-      resolve(false);
-    });
-    sock.once('error', () => resolve(true));
-    sock.setTimeout(1000, () => {
-      sock.destroy();
-      resolve(true);
-    });
-  });
-}
-
+// `laya daemon <gguf> --device X` protocol (stdin/stdout, one JSON object per line; no port):
+//   stdout line 1: {"status":"ready","model":"laya"} once the model is loaded
+//   request:  {"id":n,"state":{...},"questions":{...}}
+//   response: {"model","family","route","answers":{<qid>:{...}},"usage":{...},"id":n}
+//   error:    {"id":n,"error":"..."}
+// There is no batch: requests are written one at a time (a promise chain per child) and matched
+// by String(id), since the daemon may echo the id as a string. stderr carries laya's logs.
 function startLaya(modelPath, device) {
-  const args = ['serve', modelPath, '--port', String(LAYA_PORT), '--device', device];
+  const args = ['daemon', modelPath, '--device', device];
   log(`Menjalankan: ${EXE_PATH} ${args.join(' ')}`);
   const child = spawn(EXE_PATH, args, {
     cwd: path.dirname(EXE_PATH),
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
   });
   state.child = child;
-  pipeLogs(child.stdout, '[laya]');
+  child.pending = new Map(); // String(id) -> {resolve, reject, timer}
+  child.nextId = 1;
+  child.chain = Promise.resolve(); // serializes requests: one in flight at a time
+  child.readyWaiters = [];
+  child.isReady = false;
+  child.failed = false;
+  child.stdin.on('error', (err) => log(`laya stdin error: ${err.message}`));
   pipeLogs(child.stderr, '[laya!]');
+  readJsonLines(child);
 
   child.on('error', (err) => {
     state.error = err.message;
     setStatus(`Gagal menjalankan laya.exe: ${err.message}`, { ready: false });
+    failChild(child, new Error(`laya.exe error: ${err.message}`));
   });
 
   child.on('exit', (code, signal) => {
+    failChild(child, new Error(`laya.exe berhenti (code=${code}, signal=${signal})`));
     const wasCurrent = state.child === child;
     if (wasCurrent) state.child = null;
     // Intentional stop (server shutdown or model switch) or an already-replaced child:
@@ -310,6 +285,106 @@ function startLaya(modelPath, device) {
     }
   });
   return child;
+}
+
+// Line-buffered stdout reader (handles partial chunks). The ready line wakes waitForReady();
+// responses settle the pending request with the same String(id); non-JSON lines are logged.
+function readJsonLines(child) {
+  let buf = '';
+  child.stdout.setEncoding('utf8');
+  const handle = (line) => {
+    if (!line.trim()) return;
+    let msg;
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      console.log(`[laya] ${line}`);
+      return;
+    }
+    if (msg && msg.status === 'ready' && msg.id === undefined) {
+      child.isReady = true;
+      for (const w of child.readyWaiters.splice(0)) w(msg);
+      return;
+    }
+    const key = msg && msg.id !== undefined && msg.id !== null ? String(msg.id) : null;
+    const entry = key !== null ? child.pending.get(key) : undefined;
+    if (!entry) {
+      console.log(`[laya] (tanpa pasangan) ${line.slice(0, 300)}`);
+      return;
+    }
+    child.pending.delete(key);
+    clearTimeout(entry.timer);
+    if (msg.error) entry.reject(new Error(`laya: ${typeof msg.error === 'string' ? msg.error : JSON.stringify(msg.error)}`));
+    else entry.resolve(msg);
+  };
+  child.stdout.on('data', (chunk) => {
+    buf += chunk;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).replace(/\r$/, '');
+      buf = buf.slice(i + 1);
+      handle(line);
+    }
+  });
+  child.stdout.on('end', () => {
+    if (buf) handle(buf);
+    buf = '';
+  });
+}
+
+// Rejects every pending request of a child and releases anyone waiting for its ready line.
+function failChild(child, err) {
+  if (child.failed) return;
+  child.failed = true;
+  for (const w of child.readyWaiters.splice(0)) w(false);
+  for (const entry of child.pending.values()) {
+    clearTimeout(entry.timer);
+    entry.reject(err);
+  }
+  child.pending.clear();
+}
+
+// Resolves with the ready message, false if the child exits first, null on timeout.
+function waitForReady(child, timeoutMs = READY_TIMEOUT_MS) {
+  if (child.isReady) return Promise.resolve({ status: 'ready' });
+  if (child.failed || child.exitCode !== null) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const done = (v) => {
+      clearTimeout(t);
+      resolve(v);
+    };
+    const t = setTimeout(() => {
+      child.readyWaiters = child.readyWaiters.filter((w) => w !== done);
+      resolve(null);
+    }, timeoutMs);
+    child.readyWaiters.push(done);
+  });
+}
+
+// One request ({state, questions} or {preset, state}) to the current daemon. Requests are queued
+// per child so only one is in flight at a time; each has its own timeout.
+function layaRequest(payload, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const child = state.child;
+  if (!child || !child.isReady || child.failed) return Promise.reject(new Error('laya.exe belum siap'));
+  const run = () =>
+    new Promise((resolve, reject) => {
+      if (child.failed || child.exitCode !== null) return reject(new Error('laya.exe sudah berhenti'));
+      const id = child.nextId++;
+      const key = String(id);
+      const timer = setTimeout(() => {
+        if (child.pending.delete(key)) reject(new Error(`timeout ${timeoutMs} ms menunggu jawaban laya (id ${id})`));
+      }, timeoutMs);
+      child.pending.set(key, { resolve, reject, timer });
+      child.stdin.write(`${JSON.stringify({ id, ...payload })}\n`, (err) => {
+        if (err && child.pending.delete(key)) {
+          clearTimeout(timer);
+          reject(new Error(`gagal mengirim ke laya: ${err.message}`));
+        }
+      });
+    });
+  const p = child.chain.then(run, run);
+  child.chain = p.catch(() => {});
+  return p;
 }
 
 // laya's "--device auto" picks Vulkan device 0, which on laptops is often the integrated GPU
@@ -338,55 +413,30 @@ function resolveDevice(requested, modelPath) {
   });
 }
 
-async function waitForHealth(child) {
-  const deadline = Date.now() + HEALTH_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (state.child !== child || child.exitCode !== null) return false;
-    try {
-      const h = await fetchJson(`http://${LAYA_HOST}:${LAYA_PORT}/health`, {}, 3000);
-      if (h && (h.status === 'ok' || h.status === 'ready' || h.status)) {
-        return h;
-      }
-    } catch {
-      /* not up yet */
-    }
-    await sleep(HEALTH_POLL_MS);
-  }
-  return null;
-}
-
 async function launch(modelPath, device, gen = state.gen) {
   if (gen !== state.gen) return;
   state.ready = false;
   state.model = path.basename(modelPath);
   state.modelPath = modelPath;
   state.device = null;
-  if (!process.env.LAYA_PORT) {
-    for (let i = 0; i < PORT_TRIES && !(await isPortFree(LAYA_PORT)); i++) LAYA_PORT++;
-  }
-  if (!(await isPortFree(LAYA_PORT))) {
-    state.error = `Port ${LAYA_PORT} sudah dipakai`;
-    setStatus(
-      `Port laya ${LAYA_PORT} sudah dipakai proses lain (mungkin instance lain aplikasi ini). Hentikan proses itu atau set env LAYA_PORT lain, lalu restart.`
-    );
-    return;
-  }
-  if (gen !== state.gen) return; // superseded by a model switch while probing ports
   setStatus(`Memuat model ${state.model} (device: ${device})...`);
   const child = startLaya(modelPath, device);
-  const health = await waitForHealth(child);
-  if (!health) {
-    if (state.child === child && child.exitCode === null) {
+  const ready = await waitForReady(child);
+  if (!ready) {
+    if (ready === null && state.child === child && child.exitCode === null) {
       setStatus('Timeout menunggu laya.exe siap. Periksa log konsol server.');
     }
     return;
   }
-  state.device = health.device || device;
+  if (state.child !== child) return; // replaced (model switch) while loading
+  // The daemon's ready line carries no device: report the device it was started with.
+  state.device = device;
   state.error = null;
   setStatus(`Model siap: ${state.model} (device: ${state.device})`, { ready: true });
 }
 
-// Stop the current laya child on purpose and wait for it to exit. The exit handler sees
+// Stop the current laya child on purpose and wait for it to exit: close stdin first (the daemon
+// exits on EOF), kill after 3 s, taskkill the tree after timeoutMs. The exit handler sees
 // child.intentionalStop and skips the crash message / CPU fallback.
 function stopChild(timeoutMs = 15000) {
   const child = state.child;
@@ -409,10 +459,18 @@ function stopChild(timeoutMs = 15000) {
     }, timeoutMs);
     child.once('exit', done);
     try {
-      child.kill();
+      child.stdin.end();
     } catch {
-      done();
+      /* ignore */
     }
+    const k = setTimeout(() => {
+      try {
+        if (child.exitCode === null && child.signalCode === null) child.kill();
+      } catch {
+        /* ignore */
+      }
+    }, 3000);
+    child.once('exit', () => clearTimeout(k));
   });
 }
 
@@ -429,8 +487,6 @@ async function switchModel(modelPath) {
   try {
     setStatus(`Mengganti model ke ${state.model}: menghentikan model lama...`);
     await stopChild();
-    // Give the OS a moment to release the laya port before relaunching on it.
-    for (let i = 0; i < 20 && !(await isPortFree(LAYA_PORT)); i++) await sleep(250);
     if (gen !== state.gen) return; // superseded by a newer switch request
     setStatus(`Mendeteksi GPU & memuat model ${state.model}...`);
     const device = await resolveDevice(LAYA_DEVICE, modelPath);
@@ -482,6 +538,11 @@ function shutdown() {
   state.shuttingDown = true;
   const child = state.child;
   if (child && child.exitCode === null) {
+    try {
+      child.stdin.end();
+    } catch {
+      /* ignore */
+    }
     try {
       child.kill();
     } catch {
@@ -737,32 +798,33 @@ function sentimentQuestion(mode, answer) {
 const NULL_SENTIMENT = { label: null, score: null, value: null, confidence: null, act: null, options: null };
 
 // ---------------------------------------------------------------------------
-// Presets (laya GET /v1/presets), cached per loaded model
+// Presets: snapshot of laya GET /v1/presets in presets/laya-presets.json (the daemon cannot list
+// them). Loaded once at boot; refresh it with `npm run presets:sync` after upgrading laya.
 // ---------------------------------------------------------------------------
 
 const PRESET_MODE = 'preset';
-const presetCache = { key: null, list: null, pending: null };
+let presetSnapshot = { list: [] }; // {list} or {error}
+
+function loadPresetSnapshot() {
+  const rel = path.relative(ROOT, PRESETS_FILE);
+  try {
+    const body = JSON.parse(fs.readFileSync(PRESETS_FILE, 'utf8'));
+    const list = (Array.isArray(body) ? body : body?.presets ?? []).filter(
+      (p) => p && typeof p.name === 'string' && p.questions && typeof p.questions === 'object'
+    );
+    presetSnapshot = { list };
+    log(`Preset dimuat dari ${rel}: ${list.length} preset`);
+  } catch (err) {
+    presetSnapshot = { error: `snapshot preset ${rel} tidak bisa dibaca (${err.message}). Jalankan "npm run presets:sync".` };
+    log(presetSnapshot.error);
+  }
+}
+loadPresetSnapshot();
 
 // Full laya preset objects: [{name, title, blurb, state_key, state, questions}].
 async function getPresets() {
-  const key = `${state.model}#${state.gen}`;
-  if (presetCache.key === key && presetCache.list) return presetCache.list;
-  if (presetCache.key === key && presetCache.pending) return presetCache.pending;
-  presetCache.key = key;
-  presetCache.list = null;
-  const pending = fetchJson(`http://${LAYA_HOST}:${LAYA_PORT}/v1/presets`, {}, 30000)
-    .then((body) => {
-      const list = (Array.isArray(body) ? body : body?.presets ?? []).filter(
-        (p) => p && typeof p.name === 'string' && p.questions && typeof p.questions === 'object'
-      );
-      if (presetCache.key === key) presetCache.list = list;
-      return list;
-    })
-    .finally(() => {
-      if (presetCache.pending === pending) presetCache.pending = null;
-    });
-  presetCache.pending = pending;
-  return pending;
+  if (presetSnapshot.error) throw new Error(presetSnapshot.error);
+  return presetSnapshot.list;
 }
 
 function presetSummary(p) {
@@ -1032,34 +1094,17 @@ function writeTemplate(template) {
 // laya calls
 // ---------------------------------------------------------------------------
 
-// Asks `questions` for every state. Returns one answers map ({id: answer}) per state.
-async function decideAll(states, questions) {
-  // Preferred: one batch call. Verified from laya server.cpp: response is
-  //   { results: [ { model, family?, route?, answers:{<id>:{...}}, usage:{...} }, ... ] }
-  // in the same order as `states`.
-  try {
-    const resp = await fetchJson(`http://${LAYA_HOST}:${LAYA_PORT}/v1/decide/batch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ states, questions }),
-    }, 10 * 60 * 1000);
-    const list = Array.isArray(resp) ? resp : resp?.results ?? resp?.responses;
-    if (!Array.isArray(list) || list.length !== states.length) throw new Error('unexpected batch response shape');
-    return list.map((r) => {
-      if (!r?.answers || typeof r.answers !== 'object') throw new Error('batch result missing answers');
-      return r.answers;
-    });
-  } catch (err) {
-    log(`Batch gagal (${err.message}), fallback ke /v1/decide per teks`);
-  }
+// Asks `questions` for every state, one daemon request per state (the daemon has no batch).
+// Returns one answers map ({id: answer}) per state. When `usage` is given, each response's usage
+// (input_tokens, output_tokens, latency_ms) is added to it.
+async function decideAll(states, questions, usage = null) {
   const out = [];
   for (const s of states) {
-    const resp = await fetchJson(`http://${LAYA_HOST}:${LAYA_PORT}/v1/decide`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ state: s, questions }),
-    });
+    const resp = await layaRequest({ state: s, questions });
     if (!resp?.answers || typeof resp.answers !== 'object') throw new Error('laya response missing answers');
+    if (usage && resp.usage && typeof resp.usage === 'object') {
+      for (const k of ['input_tokens', 'output_tokens', 'latency_ms']) usage[k] = round4(num(usage[k]) + num(resp.usage[k]));
+    }
     out.push(resp.answers);
   }
   return out;
@@ -1069,8 +1114,8 @@ function sentimentAnswerOf(answers) {
   return answers?.sentiment ?? answers?.[Object.keys(answers || {})[0]];
 }
 
-async function scoreTexts(texts, mode) {
-  const answersList = await decideAll(texts.map((text) => ({ text })), { sentiment: MODES[mode].question });
+async function scoreTexts(texts, mode, usage = null) {
+  const answersList = await decideAll(texts.map((text) => ({ text })), { sentiment: MODES[mode].question }, usage);
   const parse = PARSERS[mode];
   return answersList.map((answers) => {
     const a = sentimentAnswerOf(answers);
@@ -1082,7 +1127,7 @@ async function scoreTexts(texts, mode) {
 // Preset / custom mode: each text goes into {...extraState, [state_key]: text} (the preset's own
 // example-state fields are left out unless passed as extraState).
 // With includeSentiment the sentiment3 question is asked in the same call under id "sentiment".
-async function scorePreset(texts, preset, includeSentiment, extraState = {}) {
+async function scorePreset(texts, preset, includeSentiment, extraState = {}, usage = null) {
   const questions = {};
   if (includeSentiment) questions.sentiment = MODES.sentiment3.question;
   for (const [id, q] of Object.entries(preset.questions)) if (id !== 'sentiment' || !includeSentiment) questions[id] = q;
@@ -1090,7 +1135,8 @@ async function scorePreset(texts, preset, includeSentiment, extraState = {}) {
   const fixed = Object.fromEntries(Object.entries(extraState).filter(([, v]) => v !== ''));
   const answersList = await decideAll(
     texts.map((text) => ({ ...fixed, [preset.state_key]: text })),
-    questions
+    questions,
+    usage
   );
   return answersList.map((answers) => {
     const qs = [];
@@ -1240,7 +1286,7 @@ function notReady(res) {
   return res.status(503).json({ error: state.message, message: state.message, switching: state.switching });
 }
 
-// Preset list from laya (cached per model): [{name, title, blurb, state_key, question_count}].
+// Preset list from the snapshot: [{name, title, blurb, state_key, question_count}].
 app.get('/api/presets', async (req, res) => {
   if (state.switching || !state.ready) return notReady(res);
   try {
@@ -1406,9 +1452,10 @@ app.post('/api/score', async (req, res) => {
   }
   try {
     let scored;
-    if (isPreset) scored = await scorePreset(texts, preset, includeSentiment, extraState);
-    else if (isCustom) scored = await scorePreset(texts, template, includeSentiment, extraState);
-    else scored = await scoreTexts(texts, mode);
+    const usage = { input_tokens: 0, output_tokens: 0, latency_ms: 0 };
+    if (isPreset) scored = await scorePreset(texts, preset, includeSentiment, extraState, usage);
+    else if (isCustom) scored = await scorePreset(texts, template, includeSentiment, extraState, usage);
+    else scored = await scoreTexts(texts, mode, usage);
     // index is 0-based (frontend displays index + 1)
     const results = scored.map((s, index) => ({ index, text: texts[index], ...s }));
     const isSet = isPreset || isCustom;
@@ -1421,6 +1468,8 @@ app.post('/api/score', async (req, res) => {
       results,
       average: buildAverage(results, mode, !isSet || includeSentiment),
       latency_ms: Date.now() - t0,
+      // Summed over the per-text daemon requests; total_tokens feeds the editor's "N token" meta.
+      usage: { ...usage, total_tokens: usage.input_tokens + usage.output_tokens },
     };
     if (isCustom) {
       body.template_id = template.id;

@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "setup": "node scripts/setup.js"
+    "setup": "node scripts/setup.js",
+    "presets:sync": "node scripts/sync-presets.js"
   },
   "engines": {
     "node": ">=18"

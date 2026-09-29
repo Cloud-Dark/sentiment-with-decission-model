@@ -1,7 +1,7 @@
 # Referensi Konfigurasi
 
 > Status: Draft
-> Terakhir diperbarui: 2026-09-28
+> Terakhir diperbarui: 2026-09-29
 > Pemilik: _TBD_
 
 Aplikasi tidak memakai berkas konfigurasi; seluruh pengaturan lewat variabel lingkungan. Tidak ada dukungan `.env`.
@@ -11,9 +11,9 @@ Aplikasi tidak memakai berkas konfigurasi; seluruh pengaturan lewat variabel lin
 | Variabel | Default | Dipakai oleh | Ringkasan |
 | --- | --- | --- | --- |
 | `PORT` | `3000` | `server.js` | Port server web |
-| `LAYA_PORT` | `8089` | `server.js` | Port internal `laya serve` |
-| `LAYA_DEVICE` | `auto` | `server.js` | Perangkat inferensi |
-| `LAYA_MODEL` | tidak ada (pilih otomatis) | `server.js` | Berkas `.gguf` tertentu |
+| ~~`LAYA_PORT`~~ | (dihapus) | tidak dipakai | Dihapus sejak ADR-010; laya berjalan sebagai daemon stdio tanpa port |
+| `LAYA_DEVICE` | `auto` (`cpu` untuk `presets:sync`) | `server.js`, `scripts/sync-presets.js` | Perangkat inferensi |
+| `LAYA_MODEL` | tidak ada (pilih otomatis) | `server.js`, `scripts/sync-presets.js` | Berkas `.gguf` tertentu |
 | `LAYA_RELEASE_URL` | URL rilis ggmlc v0.9.6 Vulkan | `scripts/setup.js` | Sumber zip binary laya |
 
 Contoh PowerShell: `$env:LAYA_DEVICE='vulkan:1'; npm start`. Contoh bash: `PORT=3001 npm start`.
@@ -25,11 +25,11 @@ Contoh PowerShell: `$env:LAYA_DEVICE='vulkan:1'; npm start`. Contoh bash: `PORT=
 - Jika **diset** dan port sibuk, server mencetak galat lalu keluar dengan kode 1.
 - Server web mendengarkan di semua antarmuka (tanpa host eksplisit). Lihat risiko R-08 di [10_RISK_REGISTER.md](10_RISK_REGISTER.md).
 
-### LAYA_PORT
+### LAYA_PORT (dihapus)
 
-- Default `8089`, host selalu `127.0.0.1`.
-- Jika **tidak diset**, port dicek dengan koneksi TCP (timeout 1 detik) dan dinaikkan hingga 20 kali sampai ditemukan port bebas.
-- Jika **diset** dan sibuk, laya tidak dijalankan dan status berisi pesan bahwa port sudah dipakai proses lain.
+- Dihapus pada 2026-09-29 ([ADR-010](11_DECISIONS.md#adr-010-laya-daemon-via-stdio-alih-alih-serve)). `server.js` menjalankan `laya.exe daemon` yang berkomunikasi lewat stdin/stdout dan tidak membuka port. Aplikasi hanya mendengarkan pada `PORT`.
+- Jika masih diset, variabel ini diabaikan.
+- `npm run presets:sync` memakai `laya serve` sementara pada port acak bebas di `127.0.0.1` yang dipilih OS, lalu menghentikannya; tidak ada variabel untuk port tersebut.
 
 ### LAYA_DEVICE
 
@@ -63,7 +63,9 @@ Nilai berikut tidak dapat dikonfigurasi tanpa mengubah `server.js`.
 | `MAX_TEXTS` | 256 teks per permintaan `/api/score` |
 | Batas body JSON | 20 MB |
 | Polling folder `models/` | 5 detik |
-| Polling health laya | 1 detik, timeout 10 menit |
+| Menunggu baris ready daemon (`READY_TIMEOUT_MS`) | 10 menit |
+| Timeout per permintaan daemon (`REQUEST_TIMEOUT_MS`) | 120 detik per teks |
+| Snapshot preset (`PRESETS_FILE`) | `presets/laya-presets.json`, dibaca sekali saat boot |
 | Timeout `laya info` | 120 detik |
 | Ambang label rata-rata `sentiment3` | > 0,15 positif, < -0,15 negatif |
 | Ambang label `scale5` | >= 3,5 positif, <= 2,5 negatif |
