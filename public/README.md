@@ -20,7 +20,7 @@ Tema terang/gelap diatur tombol di header dan disimpan di `localStorage.theme`. 
 | Mode | `sentiment3`, `binary`, `scale5` (eksperimental), Preset / Template |
 | Preset / Template | Pilihan template atau preset Laya, opsi sertakan sentimen, tombol editor |
 | Editor | Builder pertanyaan, Raw JSON, `extra_state`, Uji, Simpan, Salin JSON, Reset, Hapus |
-| Input teks | Kotak teks dinamis dan tempel massal |
+| Input teks | Template teks "Mulai cepat" (klik langsung terisi, bisa diurungkan, bisa simpan template sendiri), tab Per kotak / Daftar (satu per baris), penghitung teks, Kosongkan |
 | Benchmark | Sakelar "Bandingkan semua model (benchmark)" di panel Mode (disimpan di `localStorage['sentiment.benchmark']`), daftar model yang diuji (default semua), opsi "Sertakan file duplikat" |
 | Progres benchmark | Satu baris per model (status Menunggu/Memuat/Menguji/Selesai/Gagal/Duplikat, waktu muat dan uji, titik live), bilah "Model i/N", waktu berjalan, tombol Batalkan |
 | Hasil | Ringkasan (jumlah teks, skor rata-rata, distribusi label, model dan latensi, rata-rata probabilitas atau per pertanyaan), kartu per teks (label, skor, probabilitas, pertanyaan dalam baris yang bisa dibuka), peringatan hasil kedaluwarsa |

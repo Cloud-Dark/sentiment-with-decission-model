@@ -23,7 +23,7 @@ Persona di atas diturunkan dari template bawaan. Validasi dengan pengguna nyata 
 
 | Fitur | Prioritas | Status |
 | --- | --- | --- |
-| Input banyak teks dan tempel massal (satu teks per baris) | Must | Selesai |
+| Input banyak teks, tampilan daftar (satu teks per baris), dan template teks contoh | Must | Selesai |
 | Mode `sentiment3` (positif/netral/negatif) | Must | Selesai |
 | Ringkasan rata-rata dan hasil per teks | Must | Selesai |
 | Ekspor Excel | Must | Selesai |

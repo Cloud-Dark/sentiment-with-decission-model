@@ -219,9 +219,25 @@
   }
   .field > textarea { grid-column: 2; grid-row: 1; min-height: 64px; }
   .field-head .remove { grid-column: 3; grid-row: 1; }
-  .bulk { margin-top: 14px; padding: 14px; border: 1.5px dashed var(--edge); background: var(--paper); }
-  .bulk textarea { min-height: 120px; background: var(--paper-raised); }
-  .bulk .row { margin-top: 10px; }
+  /* Quick-start templates */
+  .qs { display: grid; gap: 10px; margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1.5px solid var(--edge); }
+  .qs-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tpl {
+    font: 600 13px/1.2 var(--font-sans); text-transform: none; letter-spacing: 0;
+    min-height: 36px; padding: 7px 12px; box-shadow: none; background: var(--paper);
+  }
+  .tpl:hover:not(:disabled) { background: var(--signal-wash); }
+  .tpl .n { font: 600 10px var(--font-mono); letter-spacing: .08em; color: var(--ink-soft); }
+  .tpl-own { display: inline-flex; }
+  .tpl-own .tpl { border-right-width: 0; }
+  .tpl-own .icon { width: 36px; height: auto; border-color: var(--edge); }
+  .qs-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; padding: 8px 12px; background: var(--signal-wash); border-left: 4px solid var(--signal); }
+  .qs-note button.ghost { padding: 4px 2px; min-height: 0; }
+  .in-bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 12px; margin-bottom: 12px; }
+  .in-bar .tabs { flex: 1 1 auto; }
+  #listText { min-height: 180px; }
+  .in-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .in-foot .spacer { flex: 1; }
 
   /* Command bar */
   .cmd { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
@@ -288,7 +304,7 @@
   .tabs button { box-shadow: none; border: 1.5px solid transparent; border-bottom: 0; background: transparent; color: var(--ink-soft); margin-bottom: -1.5px; min-height: 38px; }
   .tabs button:hover:not(:disabled) { transform: none; box-shadow: none; color: var(--ink); }
   .tabs button:active:not(:disabled) { transform: none; }
-  .tabs button[aria-selected="true"] { color: var(--on-ink); background: var(--ink); border-color: var(--edge); }
+  .tabs button[aria-selected="true"], .tabs button[aria-selected="true"]:hover:not(:disabled) { color: var(--on-ink); background: var(--ink); border-color: var(--edge); }
   .qcard { background: var(--paper-raised); border: 1.5px solid var(--edge); padding: 12px; display: grid; gap: 10px; margin-bottom: 12px; min-width: 0; }
   .qc-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
   .qc-no { flex: none; font: 700 11px var(--font-mono); color: var(--on-ink); background: var(--ink); padding: 5px 7px; font-variant-numeric: tabular-nums; }
@@ -673,19 +689,30 @@
       <section class="sec" aria-labelledby="hInput">
         <div class="sec-head"><span class="kicker">01 — Input teks</span></div>
         <div class="panel">
-          <div class="panel-title"><h2 id="hInput">Teks</h2><span class="hint">Satu kotak = satu teks.</span></div>
-          <div id="inputs"></div>
-          <div class="row">
-            <button type="button" id="btnAdd"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Tambah teks</button>
-            <button type="button" class="ghost" id="btnBulkToggle" aria-expanded="false">Tempel banyak (satu per baris)</button>
+          <div class="panel-title"><h2 id="hInput">Teks</h2><span class="chip" id="inCount" aria-live="polite">0 teks</span></div>
+          <div class="qs" role="group" aria-labelledby="hQs">
+            <div class="lbl-row"><span class="lbl" id="hQs">Mulai cepat</span><span class="hint">Klik contoh di bawah, teks langsung terisi.</span></div>
+            <div class="qs-grid" id="qsGrid"></div>
+            <div class="qs-grid" id="qsOwn" hidden></div>
+            <div class="qs-note" id="qsNote" hidden><span id="qsNoteTxt"></span><button type="button" class="ghost" id="btnQsUndo">Urungkan</button></div>
           </div>
-          <div class="bulk" id="bulk" hidden>
-            <textarea id="bulkText" placeholder="Tempel beberapa teks di sini, satu teks per baris…"></textarea>
-            <div class="row">
-              <button type="button" class="small" id="btnBulkApply">Pisahkan ke input</button>
-              <button type="button" class="ghost" id="btnBulkCancel">Batal</button>
-              <span class="hint" id="bulkInfo"></span>
+          <div class="in-bar">
+            <div class="tabs" role="tablist" aria-label="Cara mengisi teks">
+              <button type="button" role="tab" id="tabBox" aria-selected="true" aria-controls="inputs">Per kotak</button>
+              <button type="button" role="tab" id="tabList" aria-selected="false" aria-controls="listPane">Daftar</button>
             </div>
+          </div>
+          <div id="inputs" role="tabpanel" aria-labelledby="tabBox"></div>
+          <div id="listPane" role="tabpanel" aria-labelledby="tabList" hidden>
+            <label class="sr" for="listText">Daftar teks, satu per baris</label>
+            <textarea id="listText" placeholder="Tulis atau tempel teks di sini, satu teks per baris…"></textarea>
+            <p class="hint" style="margin:6px 0 14px">Setiap baris dihitung sebagai satu teks. Baris kosong diabaikan.</p>
+          </div>
+          <div class="in-foot">
+            <button type="button" id="btnAdd"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Tambah teks</button>
+            <span class="spacer"></span>
+            <button type="button" class="ghost" id="btnSaveTpl">Simpan sebagai template</button>
+            <button type="button" class="ghost" id="btnClearIn">Kosongkan</button>
           </div>
         </div>
       </section>
@@ -1777,6 +1804,7 @@
       var next = f.nextElementSibling || f.previousElementSibling;
       f.remove();
       renumber();
+      inputsChanged();
       if (next) next.querySelector('textarea').focus();
     });
     inputs.appendChild(f);
@@ -1802,30 +1830,188 @@
 
   $('btnAdd').addEventListener('click', function () { addField('', true); });
 
-  /* ---------- Bulk paste ---------- */
-  function toggleBulk(show) {
-    $('bulk').hidden = !show;
-    $('btnBulkToggle').setAttribute('aria-expanded', String(show));
-    $('bulkInfo').textContent = '';
-    if (show) $('bulkText').focus();
+  /* ---------- Quick-start text templates ---------- */
+  // `tpl` = id template keputusan yang cocok; dipilih otomatis bila mode Preset / Template aktif.
+  var SAMPLES = [
+    { id: 'campuran', title: 'Sentimen campuran', texts: [
+      'Jawabannya cepat sekali, aku suka!',
+      'Jawabannya kenapa sangat lambat ya…',
+      'Aku ingin barangnya dikirimkan sekarang.',
+      'Pelayanannya biasa saja, tidak ada yang istimewa.',
+      'Mantap, admin ramah dan sangat membantu.'
+    ] },
+    { id: 'ulasan', title: 'Ulasan produk', tpl: 'ulasan-produk', texts: [
+      'Bahannya tebal dan jahitannya rapi, sesuai foto. Recommended seller!',
+      'Harga murah tapi kualitas jauh dari deskripsi, baru dipakai seminggu sudah rusak.',
+      'Pengiriman lama banget, sampai 10 hari, kardusnya penyok pula.',
+      'Barang oke, sesuai harga. Lumayan lah buat sehari-hari.',
+      'Seller fast response, ukuran kekecilan langsung dibantu tukar. Puas!'
+    ] },
+    { id: 'keluhan', title: 'Keluhan pelanggan', tpl: 'keluhan-pelanggan', texts: [
+      'Saldo saya terpotong dua kali padahal transaksi gagal. Tolong segera dikembalikan!',
+      'Aplikasi error terus sejak update kemarin, tidak bisa login sama sekali.',
+      'Sudah 3 kali komplain soal paket hilang tapi tidak ada tanggapan. Saya mau refund saja.',
+      'Mohon info, kenapa pesanan saya belum dikirim padahal sudah bayar dari kemarin?',
+      'Kalau begini terus saya pindah ke layanan lain saja.'
+    ] },
+    { id: 'cs', title: 'Percakapan CS', tpl: 'percakapan-cs', texts: [
+      'Pelanggan: Halo, paket saya belum sampai padahal estimasi kemarin.\nAgen: Mohon maaf, Kak. Boleh minta nomor pesanannya?\nPelanggan: INV-2041.\nAgen: Paket tertahan di gudang transit, kami eskalasi dan akan tiba besok.\nPelanggan: Oke, terima kasih.',
+      'Pelanggan: Saya mau refund, barangnya rusak.\nAgen: Baik, silakan kirim foto barangnya.\nPelanggan: Sudah saya kirim dari tadi, kok belum diproses juga?\nAgen: Akan kami cek dulu ya.\nPelanggan: Lama sekali, kecewa.',
+      'Pelanggan: Cara ganti alamat pengiriman gimana ya?\nAgen: Masuk ke menu Profil > Alamat, lalu pilih Ubah.\nPelanggan: Sudah bisa, makasih banyak!'
+    ] },
+    { id: 'komentar', title: 'Komentar medsos', tpl: 'moderasi-komentar', texts: [
+      'Kontennya bermanfaat banget, makasih sudah berbagi!',
+      'Dasar bodoh, mending kamu diam saja.',
+      'Promo pinjaman cepat cair tanpa jaminan, cek link di bio!!!',
+      'Saya kurang setuju, tapi poinnya masuk akal juga.',
+      'Orang dari daerah itu memang semuanya tidak bisa dipercaya.'
+    ] },
+    { id: 'email', title: 'Email masuk', tpl: 'email-triage', texts: [
+      'Halo, saya ingin membatalkan langganan dan meminta pengembalian dana bulan ini.',
+      'Selamat! Akun Anda memenangkan hadiah. Klik tautan ini dan masukkan kata sandi Anda untuk klaim.',
+      'Mohon dikirimkan invoice untuk pembayaran bulan September ke email ini.',
+      'Server produksi kami down sejak pagi, mohon bantuan segera.'
+    ] },
+    { id: 'sarkas', title: 'Sarkasme', tpl: 'sentimen-sarkasme', texts: [
+      'Wah hebat, paketnya cuma telat dua minggu. Luar biasa sekali.',
+      'Makasih ya sudah bikin saya nunggu CS 3 jam, sangat membantu.',
+      'Produknya bagus, sudah beli yang kedua kalinya.',
+      'Keren banget aplikasinya, tiap dibuka langsung keluar sendiri.'
+    ] }
+  ];
+  var OWN_KEY = 'sentiment.textTemplates';
+  function loadOwn() {
+    try {
+      var v = JSON.parse(window.localStorage.getItem(OWN_KEY) || '[]');
+      return Array.isArray(v) ? v.filter(function (t) { return t && typeof t.title === 'string' && Array.isArray(t.texts); }) : [];
+    } catch (e) { return []; }
   }
-  $('btnBulkToggle').addEventListener('click', function () { toggleBulk($('bulk').hidden); });
-  $('btnBulkCancel').addEventListener('click', function () { $('bulkText').value = ''; toggleBulk(false); });
-  $('btnBulkApply').addEventListener('click', function () {
-    var lines = $('bulkText').value.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
-    if (!lines.length) { $('bulkInfo').textContent = 'Tidak ada baris untuk ditambahkan.'; return; }
-    // Fill empty inputs first, then append new ones.
-    var empties = fields().map(function (f) { return f.querySelector('textarea'); })
-      .filter(function (t) { return !t.value.trim(); });
-    lines.forEach(function (line) {
-      var t = empties.shift();
-      if (t) t.value = line; else addField(line);
+  function saveOwn(list) { try { window.localStorage.setItem(OWN_KEY, JSON.stringify(list)); return true; } catch (e) { return false; } }
+  var ownTpls = loadOwn();
+
+  function tplButton(t) {
+    var b = el('button', { type: 'button', class: 'tpl', title: 'Isi ' + t.texts.length + ' teks contoh: ' + t.title }, [
+      el('span', { text: t.title }), el('span', { class: 'n', text: String(t.texts.length) })
+    ]);
+    b.addEventListener('click', function () { applyTemplate(t); });
+    return b;
+  }
+  function renderTemplates() {
+    var g = $('qsGrid');
+    g.textContent = '';
+    SAMPLES.forEach(function (t) { g.appendChild(tplButton(t)); });
+    var o = $('qsOwn');
+    o.textContent = '';
+    o.hidden = !ownTpls.length;
+    ownTpls.forEach(function (t, i) {
+      var rm = el('button', { type: 'button', class: 'icon', title: 'Hapus template ' + t.title, 'aria-label': 'Hapus template ' + t.title }, [xIcon()]);
+      rm.addEventListener('click', function () {
+        if (!window.confirm('Hapus template “' + t.title + '”?')) return;
+        ownTpls.splice(i, 1);
+        saveOwn(ownTpls);
+        renderTemplates();
+      });
+      o.appendChild(el('span', { class: 'tpl-own' }, [tplButton(t), rm]));
     });
-    $('bulkText').value = '';
-    toggleBulk(false);
-    if (shown === 'bench') updateStale();
+  }
+
+  var undoTexts = null;
+  function setTexts(list) {
+    inputs.textContent = '';
+    if (!list.length) list = [''];
+    list.forEach(function (v) { addField(v); });
+    if (view === 'list') {
+      if (list.some(function (v) { return /\n/.test(v); })) setView('box');
+      else $('listText').value = list.filter(function (v) { return v.trim(); }).join('\n');
+    }
+    inputsChanged();
+  }
+  function applyTemplate(t) {
+    var prev = textValues();
+    var had = prev.some(function (s) { return s.trim(); });
+    undoTexts = had ? prev : null;
+    setTexts(t.texts.slice());
+    var note = t.texts.length + ' teks dari “' + t.title + '” dimuat.';
+    if (t.tpl && mode === 'preset' && pickDecisionTemplate(t.tpl)) note += ' Template keputusan ikut dipilih.';
+    $('qsNoteTxt').textContent = note;
+    $('btnQsUndo').hidden = !had;
+    $('qsNote').hidden = false;
+  }
+  function pickDecisionTemplate(id) {
+    var k = 't:' + id;
+    if (!presetsLoaded || !keyExists(k) || selKey === k || isDirty()) return selKey === k;
+    selKey = k;
+    $('presetSel').value = k;
+    try { window.localStorage.setItem(PRESET_KEY, k); } catch (e) { /* ignore */ }
+    loadItem(k);
+    return true;
+  }
+  $('btnQsUndo').addEventListener('click', function () {
+    if (!undoTexts) return;
+    setTexts(undoTexts);
+    undoTexts = null;
+    $('qsNote').hidden = true;
   });
-  inputs.addEventListener('input', function () { if (shown === 'bench') updateStale(); });
+  $('btnSaveTpl').addEventListener('click', function () {
+    var texts = textValues().map(function (s) { return s.trim(); }).filter(Boolean);
+    if (!texts.length) { window.alert('Isi minimal satu teks dulu, lalu simpan sebagai template.'); return; }
+    var name = window.prompt('Nama template (' + texts.length + ' teks):', '');
+    if (name == null) return;
+    name = name.trim().slice(0, 40);
+    if (!name) return;
+    ownTpls = ownTpls.filter(function (t) { return t.title !== name; });
+    ownTpls.push({ title: name, texts: texts });
+    if (!saveOwn(ownTpls)) window.alert('Template tidak bisa disimpan di browser ini (penyimpanan lokal diblokir).');
+    renderTemplates();
+  });
+  $('btnClearIn').addEventListener('click', function () {
+    var prev = textValues();
+    if (!prev.some(function (s) { return s.trim(); })) return;
+    undoTexts = prev;
+    setTexts(['', '']);
+    $('qsNoteTxt').textContent = 'Semua teks dikosongkan.';
+    $('btnQsUndo').hidden = false;
+    $('qsNote').hidden = false;
+  });
+
+  /* ---------- Box / list view ---------- */
+  var view = 'box';
+  function setView(v) {
+    if (v === view) return;
+    if (v === 'list') {
+      var vals = textValues().filter(function (s) { return s.trim(); });
+      if (vals.some(function (s) { return /\n/.test(s); }) &&
+          !window.confirm('Beberapa teks berisi lebih dari satu baris dan akan digabung menjadi satu baris. Lanjutkan?')) return;
+      $('listText').value = vals.map(function (s) { return s.replace(/\s*\r?\n\s*/g, ' ').trim(); }).join('\n');
+    }
+    view = v;
+    $('tabBox').setAttribute('aria-selected', String(v === 'box'));
+    $('tabList').setAttribute('aria-selected', String(v === 'list'));
+    inputs.hidden = v !== 'box';
+    $('listPane').hidden = v !== 'list';
+    $('btnAdd').hidden = v !== 'box';
+    if (v === 'list') { syncList(); $('listText').focus(); }
+    else { renumber(); var f = fields()[0]; if (f) f.querySelector('textarea').focus(); }
+  }
+  function syncList() {
+    var lines = $('listText').value.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
+    inputs.textContent = '';
+    if (!lines.length) lines = [''];
+    lines.forEach(function (l) { addField(l); });
+    if (lines.length < 2 && !lines[0]) addField();
+    inputsChanged();
+  }
+  $('tabBox').addEventListener('click', function () { setView('box'); });
+  $('tabList').addEventListener('click', function () { setView('list'); });
+  $('listText').addEventListener('input', syncList);
+
+  function inputsChanged() {
+    var n = textValues().filter(function (s) { return s.trim(); }).length;
+    $('inCount').textContent = n + ' teks';
+    if (shown === 'bench') updateStale();
+  }
+  inputs.addEventListener('input', inputsChanged);
+  renderTemplates();
 
   /* ---------- Analyze ---------- */
   var lastResponse = null, lastReq = null, busy = false;
@@ -2237,7 +2423,7 @@
   /* ---------- Reset ---------- */
   $('btnReset').addEventListener('click', function () {
     if (benchRunning) return;
-    var hasContent = textValues().some(function (s) { return s.trim(); }) || lastResponse || benchData || $('bulkText').value.trim();
+    var hasContent = textValues().some(function (s) { return s.trim(); }) || lastResponse || benchData;
     if (hasContent && !window.confirm('Hapus semua teks dan hasil analisis?')) return;
     resetInputs();
     lastResponse = null;
@@ -2250,10 +2436,12 @@
     $('summary').textContent = '';
     $('stale').hidden = true;
     updateControls();
-    $('bulkText').value = '';
-    toggleBulk(false);
+    $('listText').value = '';
+    $('qsNote').hidden = true;
+    undoTexts = null;
+    inputsChanged();
     showError('');
-    fields()[0].querySelector('textarea').focus();
+    if (view === 'list') $('listText').focus(); else fields()[0].querySelector('textarea').focus();
   });
 
   /* ---------- Export ---------- */
@@ -3050,6 +3238,7 @@
 
   applyMode();
   resetInputs();
+  inputsChanged();
   updateControls();
   pollStatus();
 })();

@@ -21,7 +21,7 @@ Frontend adalah satu berkas `public/index.html` (HTML, CSS, JavaScript ES5 dalam
 | Mode | `modeSeg`, `modeHint` | Pilihan `sentiment3`, `binary`, `scale5`, Preset / Template, beserta petunjuk |
 | Preset | `presetBox`, `presetSel`, `btnEditor`, `inclSent` | Pilih template/preset, buka editor, sertakan sentimen |
 | Editor | `editor` | Lihat bagian Editor |
-| Input | `inputs`, `btnAdd`, `btnBulkToggle`, `bulk`, `bulkText`, `btnBulkApply`, `btnBulkCancel` | Kotak teks dinamis dan tempel massal (satu teks per baris) |
+| Input | `inCount`, `qsGrid`, `qsOwn`, `qsNote`, `btnQsUndo`, `tabBox`, `tabList`, `inputs`, `listPane`, `listText`, `btnAdd`, `btnSaveTpl`, `btnClearIn` | Template teks "Mulai cepat" (bawaan `SAMPLES` + milik pengguna), tab Per kotak / Daftar (satu teks per baris), penghitung teks, Kosongkan dengan Urungkan |
 | Aksi | `btnAnalyze`, `btnReset`, `btnExport` | Analisis (`Ctrl + Enter`), reset, ekspor Excel |
 | Galat | `err` | Pesan galat global |
 | Hasil | `results`, `resMeta`, `stale`, `avgBox`, `rows` | Metadata, peringatan hasil kedaluwarsa, rata-rata, baris per teks |
@@ -46,6 +46,7 @@ Akses dibungkus `try/catch`; aplikasi tetap berjalan jika storage tidak tersedia
 | Kunci | Nilai | Catatan |
 | --- | --- | --- |
 | `sentiment.mode` | `sentiment3`, `binary`, `scale5`, `preset` | Nilai tidak dikenal kembali ke `sentiment3` |
+| `sentiment.textTemplates` | Array `{ title, texts[] }` | Template teks milik pengguna dari "Simpan sebagai template". |
 | `sentiment.preset` | `t:<id>`, `p:<name>`, `new` | Nilai lama berupa nama polos diberi prefiks `p:`. Dihapus saat template yang dipilih dihapus. |
 | `sentiment.includeSentiment` | `'1'` / `'0'` | Selain `'0'` dianggap aktif |
 

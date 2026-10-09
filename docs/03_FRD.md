@@ -18,13 +18,15 @@ Kriteria penerimaan:
 - Server menolak lebih dari 256 teks valid dengan HTTP 400.
 - `Ctrl + Enter` (atau `Cmd + Enter`) menjalankan analisis.
 
-## FR-002 Tempel massal
+## FR-002 Template teks dan tampilan daftar
 
 Kriteria penerimaan:
-- Tombol "Tempel banyak (satu per baris)" membuka area tempel.
-- "Pisahkan ke input" memecah isi per baris (`\r?\n`), memangkas spasi, dan membuang baris kosong.
-- Baris mengisi kolom input yang kosong terlebih dahulu, lalu sisanya menambah kolom baru.
-- Jika tidak ada baris, muncul "Tidak ada baris untuk ditambahkan." "Batal" mengosongkan dan menutup area tempel.
+- Bagian "Mulai cepat" menampilkan tombol contoh (Sentimen campuran, Ulasan produk, Keluhan pelanggan, Percakapan CS, Komentar medsos, Email masuk, Sarkasme) beserta jumlah teksnya.
+- Klik contoh mengganti semua teks dengan isi contoh. Jika sebelumnya ada teks, muncul tombol "Urungkan" untuk mengembalikannya.
+- Bila mode Preset / Template aktif dan contoh punya template keputusan yang cocok (mis. Ulasan produk → `ulasan-produk`), template itu ikut dipilih, kecuali editor punya perubahan yang belum disimpan.
+- "Simpan sebagai template" menyimpan teks saat ini dengan nama pilihan pengguna di `localStorage['sentiment.textTemplates']`; template ini muncul di baris kedua dan bisa dihapus.
+- Tab "Per kotak" / "Daftar": tampilan Daftar adalah satu textarea, satu teks per baris (spasi dipangkas, baris kosong dibuang), dan langsung menyinkronkan kotak input. Pindah ke Daftar meminta konfirmasi jika ada teks multi-baris karena akan digabung jadi satu baris; memuat contoh multi-baris (Percakapan CS) otomatis kembali ke Per kotak.
+- "Kosongkan" menghapus semua teks (bisa diurungkan). Penghitung "N teks" di judul panel menghitung teks yang tidak kosong.
 
 ## FR-003 Mode penilaian
 
@@ -48,8 +50,8 @@ Kriteria penerimaan:
 ## FR-005 Reset
 
 Kriteria penerimaan:
-- Tombol Reset meminta konfirmasi jika ada teks, hasil, atau isi tempel massal.
-- Setelah konfirmasi: input kembali ke dua kolom kosong, hasil disembunyikan, tombol Export dinonaktifkan, area tempel ditutup, pesan galat dihapus, dan fokus ke Teks 1.
+- Tombol Reset meminta konfirmasi jika ada teks atau hasil.
+- Setelah konfirmasi: input kembali ke dua kolom kosong, hasil disembunyikan, tombol Export dinonaktifkan, isi tampilan Daftar dikosongkan, pesan galat dihapus, dan fokus ke Teks 1 (atau ke Daftar bila tab itu aktif).
 - Reset tidak mengubah mode, preset terpilih, atau model.
 
 ## FR-006 Ekspor Excel
