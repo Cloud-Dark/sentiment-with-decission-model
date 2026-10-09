@@ -93,10 +93,10 @@
     },
     "sarcasm": {
       "type": "noul",
-      "instructions": "Is the CUSTOMER being sarcastic, i.e. saying something nice (\"mantap\", \"keren\", \"hebat\", \"terima kasih banyak ya\", \"pelayanan terbaik\") while actually complaining about slow, wrong, or failed service?",
+      "instructions": "Is the CUSTOMER being sarcastic, i.e. saying something nice (\"mantap\", \"keren\", \"hebat\", \"bagus banget\", \"terima kasih banyak ya\", \"pelayanan terbaik\") while actually complaining about the product, the price, or slow, wrong, or failed service?",
       "criteria": {
         "false": "the customer means their words literally (real thanks or a plain complaint)",
-        "true": "praise or thanks is ironic: it sits next to a complaint, a long wait, a repeated problem, or a threat to leave"
+        "true": "praise or thanks is ironic: it sits next to a complaint, a bad result, a long wait, a repeated problem, or a refusal to buy or use it again"
       }
     },
     "real_attitude": {

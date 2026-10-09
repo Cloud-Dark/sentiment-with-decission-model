@@ -10,6 +10,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/). Ve
 
 ### Added
 
+- Koreksi sarkasme pada mode preset/template: bila set berisi pertanyaan noul `sarcasm` dengan P(true) >= 0.5 dan sentimen berlabel positif, porsi P(positif) sebesar P(sarkasme) dipindah ke P(negatif). Hasil asli model disimpan di `sentiment_raw`, hasil yang dikoreksi ditandai `sarcasm_adjusted: true`, dan kartu hasil menampilkan penanda "dikoreksi sarkasme".
 - Pertanyaan `would_buy_again` pada template `sentimen-sarkasme` dan `percakapan-cs-sarkasme` sebagai sinyal pendukung untuk kalimat sarkas.
 - Template bawaan `percakapan-cs-sarkasme` (analisis percakapan customer service ditambah deteksi sarkasme dan sikap asli pelanggan).
 - Template bawaan `sentimen-sarkasme` (deteksi sarkasme dan sikap asli penulis ulasan).
@@ -24,6 +25,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/). Ve
 
 ### Changed
 
+- Kriteria pertanyaan `sentiment` (sentiment3) kini membedakan pujian tulus dari pujian ironis. Kriteria `sarcasm` pada `percakapan-cs-sarkasme` diperluas ke keluhan soal produk/harga dan penolakan membeli lagi, tidak hanya layanan.
 - `server.js` menjalankan `laya.exe daemon` (stdin/stdout, JSON per baris) alih-alih `laya.exe serve`. Aplikasi kini hanya membuka port web. Penilaian dilakukan per teks secara berurutan karena daemon tidak memiliki batch; bentuk respons `/api/*` lainnya tidak berubah ([ADR-010](11_DECISIONS.md#adr-010-laya-daemon-via-stdio-alih-alih-serve)).
 - Definisi preset dibaca dari snapshot saat boot, bukan dari `/v1/presets` laya.
 - Inti `/api/score` dipisah menjadi `prepareScoreJob` dan `runScoreJob` agar dapat dipakai ulang oleh benchmark; bentuk respons tidak berubah. `switchModel` kini mengembalikan hasil pemuatan dan menerima opsi untuk melewati fallback CPU pada galat muat/metadata. Pembuat sheet Results dipisah (`addSentimentResultsSheet`, `addPresetResultsSheet`) agar dipakai ulang oleh ekspor benchmark.

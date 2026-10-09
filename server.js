@@ -62,10 +62,13 @@ const MODES = {
       // Wording tuned on the multilingual Q4 model: spelling out "average / so-so / mixed" as
       // neutral stops lukewarm texts ("biasa saja") from being pushed to negative.
       criteria: {
-        positive: 'Clearly positive: praise, satisfaction, happiness, or recommendation.',
+        // Sarcasm: "genuine" praise vs. ironic praise, so "mantap, bayar mahal dapetnya sampah" is
+        // not scored positive just because it contains a praise word.
+        positive: 'Clearly positive: genuine praise, satisfaction, happiness, or recommendation.',
         neutral:
           'Neutral: factual information, a question, an average or so-so opinion, or mixed feelings without a clear positive or negative lean.',
-        negative: 'Clearly negative: complaint, anger, disappointment, or criticism.',
+        negative:
+          'Clearly negative: complaint, anger, disappointment, or criticism, including sarcastic or ironic praise that actually complains.',
       },
     },
     options: [
@@ -1201,6 +1204,48 @@ async function scoreTexts(texts, mode, usage = null) {
   });
 }
 
+// Sarcasm correction for preset/custom sets that ask a noul question with id "sarcasm" next to the
+// sentiment question. The sentiment question reads praise words literally, so a sarcastic text
+// ("mantap, udah bayar mahal dapetnya sampah") comes back positive. When P(sarcasm) >= the
+// threshold and the label is positive, that share of P(positive) is moved to P(negative):
+//   pos' = pos * (1 - pS), neg' = neg + pos * pS, label = argmax.
+// The model's own answer is kept in sentiment_raw.
+const SARCASM_QUESTION_ID = 'sarcasm';
+const SARCASM_THRESHOLD = 0.5;
+
+function applySarcasm(top, qs) {
+  const sq = qs.find((q) => q.id === SARCASM_QUESTION_ID && q.type === 'noul');
+  if (!sq || top.label !== 'positive') return top;
+  const pS = num(sq.value);
+  if (pS < SARCASM_THRESHOLD) return top;
+  const p = Object.fromEntries(top.options.map((o) => [o.key, o.prob]));
+  const moved = p.positive * pS;
+  p.positive -= moved;
+  p.negative += moved;
+  const label = LABELS.reduce((a, b) => (p[b] > p[a] ? b : a));
+  const score = round4(p.positive - p.negative);
+  const options = optionsWith('sentiment3', [p.positive, p.neutral, p.negative]);
+  const sent = qs.find((q) => q.id === 'sentiment');
+  if (sent) {
+    sent.options = sent.options.map((o) => ({ ...o, prob: round4(num(p[o.key])) }));
+    sent.winner = argmaxKey(sent.options);
+    sent.value = round4(Math.max(...sent.options.map((o) => o.prob)));
+    sent.headline = headlineOf(sent.type, sent.value, sent.winner);
+    sent.adjusted = 'sarcasm';
+  }
+  const { label: rawLabel, score: rawScore, options: rawOptions } = top;
+  return {
+    ...top,
+    label,
+    score,
+    value: score,
+    confidence: round4(Math.max(p.positive, p.neutral, p.negative)),
+    options,
+    sarcasm_adjusted: true,
+    sentiment_raw: { label: rawLabel, score: rawScore, options: rawOptions },
+  };
+}
+
 // Preset / custom mode: each text goes into {...extraState, [state_key]: text} (the preset's own
 // example-state fields are left out unless passed as extraState).
 // With includeSentiment the sentiment3 question is asked in the same call under id "sentiment".
@@ -1230,6 +1275,7 @@ async function scorePreset(texts, preset, includeSentiment, extraState = {}, usa
       if (!a) throw new Error(`laya response missing answer "${id}"`);
       qs.push(genericQuestion(id, q, a));
     }
+    if (includeSentiment) top = applySarcasm(top, qs);
     return { ...top, questions: qs };
   });
 }

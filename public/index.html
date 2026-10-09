@@ -2144,6 +2144,7 @@
     if (r.label != null) head.appendChild(pill(r.label, true));
     var sc = scoreOf(r, m);
     if (sc) head.appendChild(el('div', { class: 'rc-score' }, [el('span', { class: 'rc-num', text: sc.num }), el('span', { class: 'rc-cap', text: sc.cap })]));
+    if (r.sarcasm_adjusted && r.sentiment_raw) head.appendChild(el('span', { class: 'hint', title: 'Sentimen asli model: ' + LABELS[normLabel(r.sentiment_raw.label)] + ' (' + signed(r.sentiment_raw.score) + '). Digeser karena pertanyaan sarcasm menjawab YA.', text: 'dikoreksi sarkasme' }));
 
     var t = el('p', { class: 'txt', id: (idp || 'rct') + i, text: text });
     var more = el('button', { type: 'button', class: 'more', 'aria-controls': t.id, 'aria-expanded': 'false', text: 'selengkapnya', hidden: '' });
