@@ -1808,9 +1808,15 @@
       if (next) next.querySelector('textarea').focus();
     });
     inputs.appendChild(f);
+    autoSize(ta);
     renumber();
     if (focus) ta.focus();
     return ta;
+  }
+  // Kotak tumbuh mengikuti isi agar teks panjang tidak terpotong.
+  function autoSize(ta) {
+    ta.style.height = '';
+    if (ta.scrollHeight > ta.clientHeight) ta.style.height = (ta.scrollHeight + 3) + 'px';
   }
   function renumber() {
     if (shown === 'bench') updateStale();
@@ -1991,7 +1997,11 @@
     $('listPane').hidden = v !== 'list';
     $('btnAdd').hidden = v !== 'box';
     if (v === 'list') { syncList(); $('listText').focus(); }
-    else { renumber(); var f = fields()[0]; if (f) f.querySelector('textarea').focus(); }
+    else {
+      renumber();
+      fields().forEach(function (f) { autoSize(f.querySelector('textarea')); });
+      var f0 = fields()[0]; if (f0) f0.querySelector('textarea').focus();
+    }
   }
   function syncList() {
     var lines = $('listText').value.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
@@ -2010,7 +2020,10 @@
     $('inCount').textContent = n + ' teks';
     if (shown === 'bench') updateStale();
   }
-  inputs.addEventListener('input', inputsChanged);
+  inputs.addEventListener('input', function (e) {
+    if (e.target.tagName === 'TEXTAREA') autoSize(e.target);
+    inputsChanged();
+  });
   renderTemplates();
 
   /* ---------- Analyze ---------- */
