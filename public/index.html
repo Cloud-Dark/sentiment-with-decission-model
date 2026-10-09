@@ -140,6 +140,15 @@
   }
   .console .kicker { flex: none; color: var(--ink); letter-spacing: .2em; }
   #stMsg { min-width: 0; overflow-wrap: anywhere; }
+  .intro-viz { display: none; }
+  @media (min-width: 960px) {
+    .intro { grid-template-columns: minmax(0, 1fr) minmax(0, 440px); column-gap: 40px; }
+    .intro > :not(.intro-viz) { grid-column: 1; }
+    .intro-viz { display: block; grid-column: 2; grid-row: 1 / span 4; position: relative; min-height: 300px; align-self: stretch; }
+    .intro-viz canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; display: block; }
+    .intro-viz-cap { position: absolute; left: 0; bottom: 0; font: 600 10px/1.2 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); pointer-events: none; }
+    html.is-busy .intro-viz-cap { color: var(--accent-text); }
+  }
 
   /* ============ Section heads & panels ============ */
   .sec { margin-bottom: 48px; }
@@ -706,6 +715,7 @@
     <h1>Skor sentimen &amp; keputusan, per teks.</h1>
     <p class="lede">Masukkan satu atau beberapa teks untuk dianalisis sentimennya, atau jalankan preset analisis keputusan.</p>
     <p class="console"><span class="kicker">Status</span><span id="stMsg" aria-live="polite"></span></p>
+    <div class="intro-viz" id="introViz" aria-hidden="true"><span class="intro-viz-cap" id="introVizCap">Jaringan · siaga</span></div>
   </section>
 
   <div class="wrap">
@@ -2083,6 +2093,7 @@
   }
   function setBusy(b) {
     busy = b;
+    document.documentElement.classList.toggle('is-busy', !!b);
     updateControls();
   }
   function errorFrom(res) {
@@ -3279,6 +3290,133 @@
   updateControls();
   pollStatus();
 })();
+</script>
+<script type="module">
+  // Decorative 3D network in the intro. Purely visual: skipped on narrow screens,
+  // when the CDN is unreachable, or when WebGL is unavailable.
+  const host = document.getElementById('introViz');
+  const cap = document.getElementById('introVizCap');
+  if (host && window.matchMedia('(min-width: 960px)').matches) {
+    import('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js').then(function (THREE) {
+      let renderer;
+      try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); } catch (e) { return; }
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      host.prepend(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+      camera.position.set(0, 0, 13);
+      const group = new THREE.Group();
+      scene.add(group);
+
+      // Layered nodes: input -> hidden -> hidden -> output (3 classes), like the decision model.
+      const layers = [7, 9, 9, 3];
+      const nodes = [];
+      layers.forEach(function (n, li) {
+        const x = (li - (layers.length - 1) / 2) * 2.6;
+        for (let i = 0; i < n; i++) {
+          const y = (i - (n - 1) / 2) * (li === layers.length - 1 ? 1.6 : 0.82);
+          const z = Math.sin(i * 1.7 + li) * 0.9;
+          nodes.push({ p: new THREE.Vector3(x, y, z), layer: li });
+        }
+      });
+      const edges = [];
+      nodes.forEach(function (a, ia) {
+        nodes.forEach(function (b, ib) {
+          if (b.layer === a.layer + 1 && Math.random() < (b.layer === layers.length - 1 ? 0.8 : 0.42)) edges.push([ia, ib]);
+        });
+      });
+
+      const css = function (v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); };
+      const lineMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.22 });
+      const linePos = new Float32Array(edges.length * 6);
+      edges.forEach(function (e, i) {
+        nodes[e[0]].p.toArray(linePos, i * 6); nodes[e[1]].p.toArray(linePos, i * 6 + 3);
+      });
+      const lineGeo = new THREE.BufferGeometry();
+      lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
+      group.add(new THREE.LineSegments(lineGeo, lineMat));
+
+      const nodeGeo = new THREE.SphereGeometry(0.11, 16, 12);
+      const inkMat = new THREE.MeshBasicMaterial();
+      const accMat = new THREE.MeshBasicMaterial();
+      const outMeshes = [];
+      nodes.forEach(function (n) {
+        const out = n.layer === layers.length - 1;
+        const m = new THREE.Mesh(nodeGeo, out ? accMat : inkMat);
+        m.position.copy(n.p);
+        if (out) { m.scale.setScalar(1.9); outMeshes.push(m); }
+        group.add(m);
+      });
+
+      // Signals travelling along edges.
+      const PULSES = 26;
+      const pulseGeo = new THREE.SphereGeometry(0.07, 10, 8);
+      const pulseMat = new THREE.MeshBasicMaterial();
+      const pulses = [];
+      for (let i = 0; i < PULSES; i++) {
+        const m = new THREE.Mesh(pulseGeo, pulseMat);
+        group.add(m);
+        pulses.push({ m: m, e: edges[(Math.random() * edges.length) | 0], t: Math.random() });
+      }
+
+      function applyTheme() {
+        const ink = new THREE.Color(css('--ink') || '#201e1d');
+        const acc = new THREE.Color(css('--signal') || '#ec3013');
+        inkMat.color.copy(ink); lineMat.color.copy(ink); accMat.color.copy(acc); pulseMat.color.copy(acc);
+      }
+      applyTheme();
+      new MutationObserver(function () {
+        applyTheme();
+        if (cap) cap.textContent = document.documentElement.classList.contains('is-busy') ? 'Jaringan · menganalisis' : 'Jaringan · siaga';
+      }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
+      function resize() {
+        const w = host.clientWidth, h = host.clientHeight;
+        if (!w || !h) return;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h; camera.updateProjectionMatrix();
+      }
+      new ResizeObserver(resize).observe(host);
+      resize();
+
+      let mx = 0, my = 0;
+      window.addEventListener('pointermove', function (e) {
+        mx = e.clientX / window.innerWidth - 0.5; my = e.clientY / window.innerHeight - 0.5;
+      }, { passive: true });
+
+      let visible = true;
+      new IntersectionObserver(function (en) { visible = en[0].isIntersecting; }).observe(host);
+
+      const clock = new THREE.Clock();
+      function frame() {
+        const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+        const busy = document.documentElement.classList.contains('is-busy');
+        const speed = busy ? 1.8 : 0.45;
+        group.rotation.y += ((mx * 0.5 + Math.sin(t * 0.15) * 0.35) - group.rotation.y) * 0.04;
+        group.rotation.x += (my * 0.3 - group.rotation.x) * 0.04;
+        pulses.forEach(function (p) {
+          p.t += dt * speed * (0.7 + (p.e[0] % 5) * 0.12);
+          if (p.t >= 1) {
+            // Continue forward from the reached node when possible, else restart at the input layer.
+            const next = edges.filter(function (e) { return e[0] === p.e[1]; });
+            p.e = next.length ? next[(Math.random() * next.length) | 0] : edges[(Math.random() * edges.length) | 0];
+            p.t = 0;
+          }
+          p.m.position.lerpVectors(nodes[p.e[0]].p, nodes[p.e[1]].p, p.t);
+        });
+        outMeshes.forEach(function (m, i) {
+          m.scale.setScalar(1.9 + Math.sin(t * (busy ? 6 : 1.6) + i * 2.1) * (busy ? 0.45 : 0.18));
+        });
+        lineMat.opacity = busy ? 0.32 : 0.2;
+        renderer.render(scene, camera);
+      }
+      if (reduce) { frame(); return; }
+      renderer.setAnimationLoop(function () { if (visible && !document.hidden) frame(); });
+    }).catch(function () { /* offline: keep the area empty */ });
+  }
 </script>
 </body>
 </html>
